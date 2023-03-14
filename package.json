@@ -11,13 +11,14 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
-    "clean": "yarn hardhat clean && rm -rf src/types/typechain dist artifacts",
-    "compile": "yarn hardhat compile"
+    "clean": "yarn hardhat clean && rm -rf src/types/@* src/types/typechain dist artifacts",
+    "compile": "yarn hardhat compile",
+    "types": "typechain --target=ethers-v5 --out-dir src/types/typechain \"./artifacts/!(build-info)/**/+([a-zA-Z0-9]).json\""
   },
   "dependencies": {
     "@account-abstraction/contracts": "^0.5.0",
-    "@openzeppelin/contracts": "^4.2.0",
     "@nomiclabs/hardhat-ethers": "^2.0.2",
+    "@openzeppelin/contracts": "^4.2.0",
     "defender-relay-client": "^1.39.0",
     "ethers": "^5.4.2",
     "hardhat": "^2.6.6",
@@ -28,8 +29,8 @@
     "@typechain/hardhat": "^6.1.3",
     "@types/node": "^18.15.3",
     "ts-generator": "^0.1.1",
-    "typechain": "^8.1.0",
-    "typescript": "^4.8.4"
+    "typechain": "^8.1.1",
+    "typescript": "^4.9.5"
   },
   "repository": "github:naddison36/abstract-accounts"
 }

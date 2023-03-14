@@ -13,8 +13,7 @@
         "resolveJsonModule": true,
         "skipLibCheck": true,
         "baseUrl": ".",
-        "rootDir": ".",
-        "typeRoots": ["node_modules/@types"]
+        "rootDir": "."
     },
     "include": ["./src/**/*.ts"],
     "files": [
