@@ -1,10 +1,5 @@
 import "@nomiclabs/hardhat-ethers"
-import "@nomicfoundation/hardhat-chai-matchers"
 import "@typechain/hardhat"
-import "hardhat-gas-reporter"
-import "solidity-coverage"
-import "hardhat-abi-exporter"
-import "@nomiclabs/hardhat-etherscan"
 import "ts-node/register"
 
 import type { HardhatUserConfig } from "hardhat/types"
@@ -43,18 +38,6 @@ const config: HardhatUserConfig = {
         mainnet: {
             url: process.env.NODE_URL ?? "",
         },
-    },
-    abiExporter: {
-        path: "./dist/abis",
-        clear: true,
-        flat: true,
-    },
-    etherscan: {
-        apiKey: process.env.ETHERSCAN_KEY,
-    },
-    gasReporter: {
-        currency: "USD",
-        gasPrice: 30,
     },
     mocha: {
         timeout: 10000,

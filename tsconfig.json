@@ -19,8 +19,5 @@
     "include": ["./src/**/*.ts"],
     "files": [
         "./hardhat.config.ts",
-        "./hardhat-fork.config.ts",
-        "./tasks.config.ts",
-        "./tasks-fork.config.ts"
     ]
 }
