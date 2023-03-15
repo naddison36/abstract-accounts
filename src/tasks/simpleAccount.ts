@@ -3,13 +3,7 @@ import { utils } from "ethers"
 import { hexlify } from "ethers/lib/utils"
 import { task, types } from "hardhat/config"
 
-import {
-    EntryPoint__factory,
-    IERC20__factory,
-    SimpleAccount__factory,
-    SimpleAccountFactory,
-    SimpleAccountFactory__factory,
-} from "../types/typechain"
+import { EntryPoint__factory, IERC20__factory, SimpleAccount__factory, SimpleAccountFactory__factory } from "../types/typechain"
 import { verifyEtherscan } from "../utils/etherscan"
 import { getChain } from "../utils/network"
 import { resolveAddress } from "../utils/resolvers"
@@ -18,6 +12,8 @@ import { gWETH } from "../utils/tokens"
 import { deployContract, logTxDetails } from "../utils/transaction"
 
 import type { BigNumber, providers } from "ethers"
+
+import type { SimpleAccountFactory } from "../types/typechain"
 
 task("account-factory-deploy", "Deploys a SimpleAccountFactory")
     .addOptionalParam("speed", "Defender Relayer speed param: 'safeLow' | 'average' | 'fast' | 'fastest'", "fast", types.string)
