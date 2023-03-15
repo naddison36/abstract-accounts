@@ -28,6 +28,8 @@ contract SwapWallet is SimpleAccount {
     // This caps the number of nonces to MAX_NONCE but it's the most efficient way of storing bools.
     uint256[USED_NONCES_ARRAY_SIZE] usedNonces;
 
+    event NonceUsed(uint256 nonce);
+
     constructor(IEntryPoint anEntryPoint) SimpleAccount(anEntryPoint) {}
 
     function swapTokens(Order calldata order, address recipient) external {
@@ -40,6 +42,8 @@ contract SwapWallet is SimpleAccount {
         IERC20(order.tokenIn).safeTransferFrom(msg.sender, address(this), order.amountIn);
 
         IERC20(order.tokenOut).safeTransfer(recipient, order.amountOut);
+
+        emit NonceUsed(order.nonce);
     }
 
     /// @notice check if the nonce has been used before.
@@ -72,6 +76,8 @@ contract SwapWallet is SimpleAccount {
 
         // Update the nonce flag in storage
         usedNonces[arrayIndex] = usedNonces[arrayIndex] | (1 << slotIndex);
+
+        emit NonceUsed(nonce);
     }
 
     function _hashOrder(Order calldata order) internal pure returns (bytes32 hash) {
