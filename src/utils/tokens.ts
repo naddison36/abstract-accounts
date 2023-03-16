@@ -39,4 +39,18 @@ export const pWETH: Token = {
     chain: Chain.polygon,
 } as const
 
-export const tokens = [WETH, gWETH, aWETH, oWETH, pWETH]
+export const gUSDC: Token = {
+    symbol: "USDC",
+    address: "0xD87Ba7A50B2E7E660f678A895E4B72E7CB4CCd9C",
+    chain: Chain.goerli,
+    decimals: 6,
+} as const
+
+export const gDAI: Token = {
+    symbol: "DAI",
+    address: "0xdc31Ee1784292379Fbb2964b3B9C4124D8F89C60",
+    chain: Chain.goerli,
+    decimals: 18,
+} as const
+
+export const tokens = [WETH, gWETH, aWETH, oWETH, pWETH, gUSDC, gDAI]

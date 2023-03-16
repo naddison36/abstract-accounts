@@ -1,5 +1,5 @@
+import { constants } from "ethers"
 import { formatUnits, parseUnits } from "ethers/lib/utils"
-import { ethers } from "hardhat"
 import { subtask, task, types } from "hardhat/config"
 
 import { ERC20__factory } from "../types/typechain"
@@ -29,7 +29,7 @@ subtask("token-approve", "Approve address or contract to spend (transferFrom) an
         const tokenContract = ERC20__factory.connect(tokenConfig.address, signer)
 
         const spenderAddress = resolveAddress(spender, chain)
-        const amountBN = Number.isInteger(amount) ? parseUnits(amount, tokenConfig.decimals) : ethers.constants.MaxUint256
+        const amountBN = Number.isInteger(amount) ? parseUnits(amount, tokenConfig.decimals) : constants.MaxUint256
 
         const tx = await tokenContract.approve(spenderAddress, amountBN)
         await logTxDetails(

@@ -13,10 +13,9 @@ struct SwapOrder {
     uint256 amountIn;
     address tokenOut; // The token being transferred from the wallet to the market maker.
     uint256 amountOut;
-    uint256 nonce; // Nonce to identify the order so it can be cancelled and not replayed
+    uint256 id; // Identify the order so it can be cancelled and not replayed
     uint256 expiry; // Expiry in seconds since epoch
-    uint256 chainid; // Chain ID of the network the order is to be executed on
-    bytes signature;
+    uint256 chainId; // Chain ID of the network the order is to be executed on
 }
 
 enum ExchangeType {
@@ -28,10 +27,9 @@ struct ExchangeOrder {
     address baseToken; // The first token in the trading pair. eg WETH in WETH/USDC
     address quoteToken; // The second token in the trading pair. eg USDC in WETH/USDC
     uint256 exchangeRate; // Rate of exchange from base token to quote token scaled by 1e18. eg USDC = exchange rate * WETH / 1e18
-    uint256 nonce; // Nonce to identify the order so it can be cancelled and not replayed
+    uint256 id; // Identify the order so it can be cancelled and not replayed
     uint256 expiry; // Expiry in seconds since epoch
-    uint256 chainid; // Chain ID of the network the order is to be executed on
-    bytes signature;
+    uint256 chainId; // Chain ID of the network the order is to be executed on
 }
 
 struct NFTOrder {
@@ -40,25 +38,24 @@ struct NFTOrder {
     uint256[] tokenIds; // The NFT token ids that are being bought or sold.
     address settleToken; // The token the NFTs are being bought or sold for. eg WETH or USDC
     uint256 price; // Unit price of each NFT.
-    uint256 nonce; // Nonce to identify the order so it can be cancelled and not replayed
+    uint256 id; // Identify the order so it can be cancelled and not replayed
     uint256 expiry; // Expiry in seconds since epoch
-    uint256 chainid; // Chain ID of the network the order is to be executed on
-    bytes signature;
+    uint256 chainId; // Chain ID of the network the order is to be executed on
 }
 
 contract DexWallet is SimpleAccount {
     using ECDSA for bytes32;
     using SafeERC20 for IERC20;
 
-    // Reserve storage slots for fixed-sized, used nonces array.
-    uint256 internal constant USED_NONCES_ARRAY_SIZE = 256;
-    /// @notice Any order nonces equal to or greater than this value are invalid.
-    /// @dev There are 256 bits in a uint256, so we can store 256 nonces in a single storage slot.
-    uint256 public constant MAX_NONCE = 256 * USED_NONCES_ARRAY_SIZE;
-    // This caps the number of nonces to MAX_NONCE but it's the most efficient way of storing bools.
-    uint256[USED_NONCES_ARRAY_SIZE] usedNonces;
+    // Reserve storage slots for fixed-sized, used order identifier array.
+    uint256 internal constant USED_ID_ARRAY_SIZE = 256;
+    /// @notice Any order identifiers equal to or greater than this value are invalid.
+    /// @dev There are 256 bits in a uint256, so we can store 256 identifier flags in a single storage slot.
+    uint256 public constant MAX_ORDER_ID = 256 * USED_ID_ARRAY_SIZE;
+    // This caps the number of orders to MAX_ORDER_ID but it's the most efficient way of storing bools.
+    uint256[USED_ID_ARRAY_SIZE] usedOrderIds;
 
-    event NonceUsed(uint256 nonce);
+    event OrderUsed(uint256 id);
 
     constructor(IEntryPoint anEntryPoint) SimpleAccount(anEntryPoint) {}
 
@@ -67,11 +64,15 @@ contract DexWallet is SimpleAccount {
     }
 
     /// @notice Swaps a whole amount of tokens.
-    function swapTokens(SwapOrder calldata order, address recipient) external {
-        require(owner == _hashSwapOrder(order).recover(order.signature), "invalid signature");
-        require(order.expiry < block.timestamp, "swap expired");
-        require(order.chainid == block.chainid, "invalid chain");
-        _checkNonce(order.nonce);
+    function swapTokens(
+        SwapOrder calldata order,
+        address recipient,
+        bytes calldata signature
+    ) external {
+        require(owner == hashSwapOrder(order).recover(signature), "invalid signature");
+        require(block.timestamp < order.expiry, "swap expired");
+        require(order.chainId == block.chainid, "invalid chain");
+        _checkOrderId(order.id);
 
         IERC20(order.tokenIn).safeTransferFrom(msg.sender, address(this), order.amountIn);
 
@@ -87,10 +88,9 @@ contract DexWallet is SimpleAccount {
     /// @return valid true if the swap order is still valid.
     function isValidSwap(SwapOrder calldata order) external view returns (bool valid) {
         valid =
-            owner == _hashSwapOrder(order).recover(order.signature) &&
-            order.expiry < block.timestamp &&
-            order.chainid == block.chainid &&
-            !nonceUsed(order.nonce) &&
+            block.timestamp < order.expiry &&
+            order.chainId == block.chainid &&
+            !orderUsed(order.id) &&
             IERC20(order.tokenOut).balanceOf(address(this)) >= order.amountOut;
     }
 
@@ -101,12 +101,13 @@ contract DexWallet is SimpleAccount {
     function exchangeTokens(
         ExchangeOrder calldata order,
         uint256 baseAmount,
-        address recipient
+        address recipient,
+        bytes calldata signature
     ) external {
-        require(owner == _hashExchangeOrder(order).recover(order.signature), "invalid signature");
-        require(order.expiry < block.timestamp, "swap expired");
-        require(order.chainid == block.chainid, "invalid chain");
-        _checkNonce(order.nonce);
+        require(owner == hashExchangeOrder(order).recover(signature), "invalid signature");
+        require(block.timestamp < order.expiry, "swap expired");
+        require(order.chainId == block.chainid, "invalid chain");
+        _checkOrderId(order.id);
 
         if (order.exchangeType == ExchangeType.BUY) {
             // Transfer in the base token
@@ -135,10 +136,7 @@ contract DexWallet is SimpleAccount {
         ExchangeOrder calldata order
     ) external view returns (uint256 baseAmount, uint256 quoteAmount) {
         if (
-            owner != _hashExchangeOrder(order).recover(order.signature) ||
-            order.expiry >= block.timestamp ||
-            order.chainid == block.chainid ||
-            nonceUsed(order.nonce)
+            block.timestamp >= order.expiry || order.chainId == block.chainid || orderUsed(order.id)
         ) {
             return (0, 0);
         }
@@ -162,12 +160,13 @@ contract DexWallet is SimpleAccount {
     function exchangeNFTs(
         NFTOrder calldata order,
         uint256[] calldata exchangeIds,
-        address recipient
+        address recipient,
+        bytes calldata signature
     ) external {
-        require(owner == _hashNFTOrder(order).recover(order.signature), "invalid signature");
-        require(order.expiry < block.timestamp, "swap expired");
-        require(order.chainid == block.chainid, "invalid chain");
-        _checkNonce(order.nonce);
+        require(owner == hashNFTOrder(order).recover(signature), "invalid signature");
+        require(block.timestamp < order.expiry, "swap expired");
+        require(order.chainId == block.chainid, "invalid chain");
+        _checkOrderId(order.id);
 
         uint256 nftLen = exchangeIds.length;
 
@@ -221,10 +220,7 @@ contract DexWallet is SimpleAccount {
         NFTOrder calldata order
     ) external view returns (uint256[] memory tokenIds) {
         if (
-            owner != _hashNFTOrder(order).recover(order.signature) ||
-            order.expiry >= block.timestamp ||
-            order.chainid == block.chainid ||
-            nonceUsed(order.nonce)
+            block.timestamp >= order.expiry || order.chainId == block.chainid || orderUsed(order.id)
         ) {
             return tokenIds;
         }
@@ -276,73 +272,73 @@ contract DexWallet is SimpleAccount {
         }
     }
 
-    /// @notice check if the nonce has been used before.
-    /// If not, mark the nonce as being used.
-    function _checkNonce(uint256 nonce) internal {
-        require(nonce < MAX_NONCE, "nonce too high");
-        uint256 arrayIndex = nonce / 256;
-        uint256 slotIndex = nonce % 256;
+    /// @notice check if the order identifier has been used before or cancelled.
+    /// If not, mark the id as being used.
+    function _checkOrderId(uint256 id) internal {
+        require(id < MAX_ORDER_ID, "id too high");
+        uint256 arrayIndex = id / 256;
+        uint256 slotIndex = id % 256;
 
-        uint256 slotData = usedNonces[arrayIndex];
-        require((slotData >> slotIndex) & 1 == 1, "nonce already used");
+        uint256 slotData = usedOrderIds[arrayIndex];
+        require((slotData >> slotIndex) & 1 == 0, "id already used");
 
-        // Update the nonce flag in storage
-        usedNonces[arrayIndex] = slotData | (1 << slotIndex);
+        // Update the order id flag in storage
+        usedOrderIds[arrayIndex] = slotData | (1 << slotIndex);
 
-        emit NonceUsed(nonce);
+        emit OrderUsed(id);
     }
 
-    /// @return used true if the nonce has already been used in a swap or was cancelled.
-    function nonceUsed(uint256 nonce) public view returns (bool used) {
-        require(nonce < MAX_NONCE, "nonce too high");
-        uint256 arrayIndex = nonce / 256;
-        uint256 slotIndex = nonce % 256;
+    /// @return used true if the order has already been used in a swap or was cancelled.
+    function orderUsed(uint256 id) public view returns (bool used) {
+        require(id < MAX_ORDER_ID, "id too high");
+        uint256 arrayIndex = id / 256;
+        uint256 slotIndex = id % 256;
 
-        used = (usedNonces[arrayIndex] >> slotIndex) & 1 == 1;
+        used = (usedOrderIds[arrayIndex] >> slotIndex) & 1 == 1;
     }
 
-    function cancelSwap(uint256 nonce) external onlyOwner {
-        require(nonce < MAX_NONCE, "nonce too high");
-        uint256 arrayIndex = nonce / 256;
-        uint256 slotIndex = nonce % 256;
+    function cancelSwap(uint256 id) external onlyOwner {
+        require(id < MAX_ORDER_ID, "id too high");
+        uint256 arrayIndex = id / 256;
+        uint256 slotIndex = id % 256;
 
-        // Update the nonce flag in storage
-        usedNonces[arrayIndex] = usedNonces[arrayIndex] | (1 << slotIndex);
+        // Update the id flag in storage
+        usedOrderIds[arrayIndex] = usedOrderIds[arrayIndex] | (1 << slotIndex);
 
-        emit NonceUsed(nonce);
+        emit OrderUsed(id);
     }
 
     // TODO move to EIP-712 hashes so the signer can see what they are signing rather than just a hash
-    function _hashSwapOrder(SwapOrder calldata order) internal pure returns (bytes32 hash) {
+    function hashSwapOrder(SwapOrder calldata order) public pure returns (bytes32 hash) {
         hash = keccak256(
             abi.encodePacked(
                 order.tokenIn,
                 order.amountIn,
                 order.tokenOut,
                 order.amountOut,
-                order.nonce,
+                order.id,
                 order.expiry,
-                order.chainid
+                order.chainId
             )
-        );
+        ).toEthSignedMessageHash();
     }
 
     // TODO move to EIP-712 hashes so the signer can see what they are signing rather than just a hash
-    function _hashExchangeOrder(ExchangeOrder calldata order) internal pure returns (bytes32 hash) {
+    function hashExchangeOrder(ExchangeOrder calldata order) public pure returns (bytes32 hash) {
         hash = keccak256(
             abi.encodePacked(
                 order.exchangeType,
                 order.baseToken,
                 order.quoteToken,
                 order.exchangeRate,
-                order.nonce,
+                order.id,
                 order.expiry,
-                order.chainid
+                order.chainId
             )
-        );
+        ).toEthSignedMessageHash();
     }
 
-    function _hashNFTOrder(NFTOrder calldata order) internal pure returns (bytes32 hash) {
+    function hashNFTOrder(NFTOrder calldata order) public pure returns (bytes32 hash) {
         hash = keccak256(
             abi.encodePacked(
                 order.exchangeType,
@@ -350,10 +346,10 @@ contract DexWallet is SimpleAccount {
                 order.tokenIds,
                 order.settleToken,
                 order.price,
-                order.nonce,
+                order.id,
                 order.expiry,
-                order.chainid
+                order.chainId
             )
-        );
+        ).toEthSignedMessageHash();
     }
 }

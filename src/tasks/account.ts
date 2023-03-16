@@ -3,7 +3,13 @@ import { utils } from "ethers"
 import { hexlify, parseEther, parseUnits } from "ethers/lib/utils"
 import { task, types } from "hardhat/config"
 
-import { EntryPoint__factory, IERC20__factory, SimpleAccount__factory, SimpleAccountFactory__factory } from "../types/typechain"
+import {
+    DexWalletFactory__factory,
+    EntryPoint__factory,
+    IERC20__factory,
+    SimpleAccount__factory,
+    SimpleAccountFactory__factory,
+} from "../types/typechain"
 import { verifyEtherscan } from "../utils/etherscan"
 import { logger } from "../utils/logger"
 import { getChain } from "../utils/network"
@@ -13,47 +19,100 @@ import { deployContract, logTxDetails } from "../utils/transaction"
 
 import type { providers } from "ethers"
 
-import type { SimpleAccountFactory } from "../types/typechain"
+import type { DexWalletFactory, SimpleAccountFactory } from "../types/typechain"
 
 const log = logger("task:account")
 
-task("account-factory-deploy", "Deploys a SimpleAccountFactory")
+task("account-factory-deploy", "Deploys a SimpleAccount or DexWallet factory contract.")
+    .addOptionalParam(
+        "factory",
+        "Name of the wallet's factory contract: SimpleAccountFactory | DexWalletFactory",
+        "SimpleAccountFactory",
+        types.string
+    )
     .addOptionalParam("speed", "Defender Relayer speed param: 'safeLow' | 'average' | 'fast' | 'fastest'", "fast", types.string)
     .setAction(async (taskArgs, hre) => {
         const signer = await getSigner(hre, taskArgs.speed)
         const chain = getChain(hre)
 
         const constructorArguments = [resolveAddress("EntryPoint", chain)]
-        const saf = await deployContract<SimpleAccountFactory>(
-            new SimpleAccountFactory__factory(signer),
-            "SimpleAccountFactory",
-            constructorArguments
-        )
 
-        console.log(`New SimpleAccountFactory contract deployed to ${saf.address}`)
+        const factory =
+            taskArgs.factory === "SimpleAccountFactory"
+                ? await deployContract<SimpleAccountFactory>(
+                      new SimpleAccountFactory__factory(signer),
+                      taskArgs.factory,
+                      constructorArguments
+                  )
+                : await deployContract<DexWalletFactory>(new DexWalletFactory__factory(signer), taskArgs.factory, constructorArguments)
+
+        await verifyEtherscan(hre, {
+            address: factory.address,
+            contract:
+                taskArgs.type === "SimpleAccount"
+                    ? "contracts/account-abstraction/SimpleAccountFactory.sol:SimpleAccountFactory"
+                    : "contracts/DexWalletFactory.sol:DexWalletFactory",
+            constructorArguments,
+        })
+
+        console.log(`New ${taskArgs.factory} contract deployed to ${factory.address}`)
     })
 
-task("account-create", "Deploys a new SimpleAccount using the factory")
+task(
+    "account-verify",
+    "Verify on Etherscan the implementation contract created by the factory. This is a SimpleAccount or DexWallet contract"
+)
+    .addParam(
+        "address",
+        "Address of the implementation contract created when the factory contract was deployed",
+        undefined,
+        types.string,
+        false
+    )
+    .addOptionalParam("type", "Name of the abstract wallet's contract: SimpleAccount | DexWallet", "SimpleAccount", types.string)
+    .setAction(async (taskArgs, hre) => {
+        const chain = getChain(hre)
+
+        const constructorArguments = [resolveAddress("EntryPoint", chain)]
+
+        await verifyEtherscan(hre, {
+            address: taskArgs.address,
+            contract:
+                taskArgs.type === "SimpleAccount"
+                    ? "contracts/account-abstraction/SimpleAccount.sol:SimpleAccount"
+                    : "contracts/DexWallet.sol:DexWallet",
+            constructorArguments,
+        })
+    })
+
+task("account-create", "Creates a new abstract account using a factory")
+    .addOptionalParam("type", "Name of the abstract wallet's contract: SimpleAccount | DexWallet", "SimpleAccount", types.string)
     .addOptionalParam("salt", "Randomness for abstract wallet creation", 0, types.int)
     .addOptionalParam("speed", "Defender Relayer speed param: 'safeLow' | 'average' | 'fast' | 'fastest'", "fast", types.string)
     .setAction(async (taskArgs, hre) => {
         const owner = await getSignerAccount(hre, taskArgs.speed)
         const chain = getChain(hre)
 
-        const factoryAddress = resolveAddress("SimpleAccountFactory", chain)
+        log(`Creating a ${taskArgs.type} wallet`)
 
-        const factory = SimpleAccountFactory__factory.connect(factoryAddress, owner.signer)
+        const factoryName = `${taskArgs.type}Factory`
+        const factoryAddress = resolveAddress(factoryName, chain)
+
+        const factory =
+            taskArgs.type === "SimpleAccount"
+                ? SimpleAccountFactory__factory.connect(factoryAddress, owner.signer)
+                : DexWalletFactory__factory.connect(factoryAddress, owner.signer)
         const salt = taskArgs.salt !== undefined ? hexlify(taskArgs.salt) : utils.randomBytes(32)
         const tx = await factory.createAccount(owner.address, salt)
-        await logTxDetails(tx, "Create SimpleAccount")
+        await logTxDetails(tx, "Create proxy to abstract wallet")
 
         const accountAddress: string = await factory.getAddress(owner.address, salt)
         const simpleAccount = SimpleAccount__factory.connect(accountAddress, owner.signer)
-        console.log(`New SimpleAccount deployed to ${accountAddress}`)
+        console.log(`New abstract wallet deployed to ${accountAddress}`)
 
         const initData = simpleAccount.interface.encodeFunctionData("initialize", [owner.address])
-        const simpleAccountImplAddress = resolveAddress("SimpleAccount", chain)
-        const constructorArguments = [simpleAccountImplAddress, initData]
+        const implementationAddress = resolveAddress(taskArgs.type, chain)
+        const constructorArguments = [implementationAddress, initData]
         await verifyEtherscan(hre, {
             address: accountAddress,
             contract: "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol:ERC1967Proxy",
@@ -62,6 +121,7 @@ task("account-create", "Deploys a new SimpleAccount using the factory")
     })
 
 task("account-address", "Gets the abstract account for the signer")
+    .addOptionalParam("factory", "Name of the wallet's factory contract", "SimpleAccountFactory", types.string)
     .addOptionalParam("salt", "Randomness for abstract account wallets", 0, types.int)
     .setAction(async (taskArgs, hre) => {
         const owner = await getSignerAccount(hre)
@@ -69,7 +129,7 @@ task("account-address", "Gets the abstract account for the signer")
 
         const entryPointAddress = resolveAddress("EntryPoint", chain)
 
-        const factoryAddress = resolveAddress("SimpleAccountFactory", chain)
+        const factoryAddress = resolveAddress(taskArgs.factory, chain)
         const walletAPI = new SimpleAccountAPI({
             provider: owner.signer.provider as providers.JsonRpcProvider,
             entryPointAddress,

@@ -48,11 +48,11 @@ export const resolveNamedAddress = (contractName: ContractNames, chain: Chain): 
             case "SimpleAccount":
                 return "0xe0625be84aA68B64bA4A97704111F66Aa4AaC358" // implementation
             case "DexWalletFactory":
-                return "0x4932f201f76f8D93B51b6b09750a398Bd5EE7ad3"
+                return "0xCe3e2dD6168a9D67c23E5DC8eAD65BaecE268102"
             case "DexWallet":
-                return "0x416F2c407126B04481A2Eb866488e7aB03c148bd" // implementation
+                return "0xC98aCf21bd12Ab1718d79B3A6caC481941c1E089" // implementation
             case "AbstractAccount":
-                return "0x271D5cef055792756bc46F90819Fe7cbe4472E66" // Proxied SimpleAccount
+                return "0xE89d184a63E0b78FDe1e372121fBb9C485Cd4C2d" // Proxied SimpleAccount
             default:
         }
     }

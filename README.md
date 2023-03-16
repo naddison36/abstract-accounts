@@ -78,6 +78,11 @@ To create your own simple abstract wallet, run the following after setting up yo
 yarn task account-create --network goerli
 ```
 
+To deploy a new `SimpleAccountFactory` contract, run the following:
+
+```
+yarn task account-factory-deploy --network goerli
+```
 
 ## DexWallet
 
@@ -91,9 +96,21 @@ Currently supports
 - Canceling orders.
 - Cross-chain replay protection.
 
+
+To deploy a new `DexWalletFactory` contract, run the following:
+
+```
+yarn task account-factory-deploy --network goerli --factory DexWalletFactory
+```
+
+To verify the newly deployed `DexWallet` implementation contract
+
+```
+yarn task account-verify --network goerli --type DexWallet --address 0x7EdC734891a04750B7fc26cE7FdBCf771e96563C
+```
+
 To create your own dex wallet, run the following after setting up your [signer](#signers):
 
 ```
-yarn task dex-wallet-create --network goerli
+yarn task account-create --network goerli --type DexWallet
 ```
-
