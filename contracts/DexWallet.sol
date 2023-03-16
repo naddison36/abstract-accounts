@@ -62,6 +62,10 @@ contract DexWallet is SimpleAccount {
 
     constructor(IEntryPoint anEntryPoint) SimpleAccount(anEntryPoint) {}
 
+    function initialize(address anOwner) external override initializer {
+        _initialize(anOwner);
+    }
+
     /// @notice Swaps a whole amount of tokens.
     function swapTokens(SwapOrder calldata order, address recipient) external {
         require(owner == _hashSwapOrder(order).recover(order.signature), "invalid signature");

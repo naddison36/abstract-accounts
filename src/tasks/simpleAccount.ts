@@ -1,17 +1,16 @@
-import { ERC4337EthersProvider, HttpRpcClient, SimpleAccountAPI } from "@naddison36/account-abstraction-sdk"
+import { SimpleAccountAPI } from "@naddison36/account-abstraction-sdk"
 import { utils } from "ethers"
-import { hexlify } from "ethers/lib/utils"
+import { hexlify, parseEther, parseUnits } from "ethers/lib/utils"
 import { task, types } from "hardhat/config"
 
 import { EntryPoint__factory, IERC20__factory, SimpleAccount__factory, SimpleAccountFactory__factory } from "../types/typechain"
 import { verifyEtherscan } from "../utils/etherscan"
 import { getChain } from "../utils/network"
-import { resolveAddress } from "../utils/resolvers"
+import { resolveAddress, resolveToken } from "../utils/resolvers"
 import { getSigner, getSignerAccount } from "../utils/signer"
-import { gWETH } from "../utils/tokens"
 import { deployContract, logTxDetails } from "../utils/transaction"
 
-import type { BigNumber, providers } from "ethers"
+import type { providers } from "ethers"
 
 import type { SimpleAccountFactory } from "../types/typechain"
 
@@ -74,7 +73,19 @@ task("account-address", "Gets the abstract account for the signer")
         console.log(`Signer abstract wallet address ${signerWalletAddress}`)
     })
 
-task("ops-transfer-eth", "Transfers native currency by directly calling the EntryPoint contract")
+task(
+    "account-transfers",
+    "Transfers native currency (eg ETH) or tokens from the abstract account to one or more accounts by directly calling the EntryPoint contract"
+)
+    .addParam(
+        "tokens",
+        'Common-separated list of token addresses or names. Use "ETH" if transferring native currency.',
+        undefined,
+        types.string,
+        false
+    )
+    .addParam("accounts", "Common-separated list of addresses or names to receive native currency", undefined, types.string, false)
+    .addParam("amounts", "Common-separated list of native currency amounts in ETH, not wei", undefined, types.string, false)
     .addOptionalParam("speed", "Defender Relayer speed param: 'safeLow' | 'average' | 'fast' | 'fastest'", "fast", types.string)
     .setAction(async (taskArgs, hre) => {
         const owner = await getSignerAccount(hre, taskArgs.speed)
@@ -92,78 +103,49 @@ task("ops-transfer-eth", "Transfers native currency by directly calling the Entr
 
         const signerWalletAddress = await walletAPI.getAccountAddress()
         console.log(`Signer's abstract wallet ${signerWalletAddress}`)
+        const nonce = await walletAPI.getNonce()
+        console.log(`Signer's abstract wallet starting nonce: ${nonce}`)
 
-        const op1 = await walletAPI.createSignedUserOp({
-            target: owner.address,
-            value: utils.parseEther("0.1"),
-            data: "0x",
-        })
-        const op2 = await walletAPI.createSignedUserOp({
-            target: "0xf7749B41db006860cEc0650D18b8013d69C44Eeb",
-            value: utils.parseEther("0.2"),
-            data: "0x",
-        })
-        const nonce1 = (await op1.nonce) as BigNumber
-        console.log(`op1 nonce ${nonce1.toString()}`)
-        const nonce2 = (await op1.nonce) as BigNumber
-        console.log(`op2 nonce ${nonce2.toString()}`)
-
-        const entryPoint = EntryPoint__factory.connect(entryPointAddress, owner.signer)
-        const tx = await entryPoint.handleOps([op1, op2], owner.address)
-        await logTxDetails(tx, "Bundled two ETH transfers")
-    })
-
-task("bundle-transfer-eth", "Transfers from native currency from abstract account to signer")
-    .addOptionalParam("speed", "Defender Relayer speed param: 'safeLow' | 'average' | 'fast' | 'fastest'", "fast", types.string)
-    .setAction(async (taskArgs, hre) => {
-        const owner = await getSignerAccount(hre, taskArgs.speed)
-        const chain = getChain(hre)
-        console.log(`Signer address ${owner.address}`)
-
-        const walletAddress = "0xD8887E0CE3939364787Add726F2609584AD8048D"
-        const factoryAddress = resolveAddress("SimpleAccountFactory", chain)
-        const entryPointAddress = resolveAddress("EntryPoint", chain)
-        const entryPoint = EntryPoint__factory.connect(entryPointAddress, owner.signer)
-
-        const config = {
-            chainId: chain,
-            entryPointAddress,
-            bundlerUrl: "https://node.stackup.sh/v1/rpc/8aee25fd560c79fd5992571112a004b54e901f1b8d58be8405bcac0cef681c0e",
-            walletAddress,
+        const tokens = taskArgs.tokens.split(",")
+        const accounts = taskArgs.accounts.split(",")
+        const amounts = taskArgs.amounts.split(",")
+        if (tokens.length !== accounts.length || accounts.length !== amounts.length) {
+            throw Error(`Number of tokens, accounts and amounts does not match: ${tokens.length}, ${accounts.length}, ${amounts.length}`)
+        }
+        const ops = []
+        for (const [i, account] of accounts.entries()) {
+            if (tokens[i] === "ETH") {
+                ops.push(
+                    await walletAPI.createSignedUserOp({
+                        target: resolveAddress(account),
+                        value: parseEther(amounts[i]),
+                        data: "0x",
+                        nonce: nonce.add(i),
+                    })
+                )
+            } else {
+                // A token transfer
+                const token = resolveToken(tokens[i], chain)
+                const tokenContract = IERC20__factory.connect(token.address, owner.signer)
+                ops.push(
+                    await walletAPI.createSignedUserOp({
+                        target: resolveAddress(token.address),
+                        data: tokenContract.interface.encodeFunctionData("transfer", [
+                            resolveAddress(account),
+                            parseUnits(amounts[i], token.decimals),
+                        ]),
+                        nonce: nonce.add(i),
+                    })
+                )
+            }
         }
 
-        const httpRpcClient = new HttpRpcClient(config.bundlerUrl, config.entryPointAddress, chain)
-        // const simpleAccount = SimpleAccountFactory__factory.connect(walletAddress, owner.signer)
-
-        const smartAccountAPI = new SimpleAccountAPI({
-            provider: owner.signer.provider as providers.JsonRpcProvider,
-            entryPointAddress: entryPointAddress,
-            owner: owner.signer,
-            factoryAddress,
-        })
-
-        const aaProvider = new ERC4337EthersProvider(
-            chain,
-            config,
-            owner.signer,
-            owner.signer.provider as providers.JsonRpcProvider,
-            httpRpcClient,
-            entryPoint,
-            smartAccountAPI
+        const entryPoint = EntryPoint__factory.connect(entryPointAddress, owner.signer)
+        const tx = await entryPoint.handleOps(ops, owner.address)
+        await logTxDetails(
+            tx,
+            `Sent ${accounts.length} transfers to ${taskArgs.accounts} with amounts ${taskArgs.amounts} for tokens ${tokens}`
         )
-        await aaProvider.init()
-        // const aaSigner = new ERC4337EthersSigner(config, owner.signer, aaProvider, httpRpcClient, smartAccountAPI)
-
-        console.log(`aa wallet ${await smartAccountAPI.getAccountAddress()}`)
-        // const aaProvider = await wrapProvider(owner.signer.provider as providers.JsonRpcProvider, config, owner.signer)
-
-        const signerWalletAddress = await aaProvider.getSigner().getAddress()
-        console.log(`aa wallet ${signerWalletAddress}`)
-
-        const weth = IERC20__factory.connect(gWETH.address, aaProvider.getSigner())
-        await weth.transfer(owner.address, utils.parseEther("0.1"))
-
-        // await aaProvider.sendTransaction({ to: owner.address, value: utils.parseEther('0.1'), data: '0x' })
     })
 
 module.exports = {}

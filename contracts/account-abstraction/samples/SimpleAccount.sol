@@ -85,7 +85,7 @@ contract SimpleAccount is BaseAccount, UUPSUpgradeable, Initializable {
      * a new implementation of SimpleAccount must be deployed with the new EntryPoint address, then upgrading
       * the implementation by calling `upgradeTo()`
      */
-    function initialize(address anOwner) public virtual initializer {
+    function initialize(address anOwner) external virtual initializer {
         _initialize(anOwner);
     }
 
