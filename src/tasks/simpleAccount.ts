@@ -5,6 +5,7 @@ import { task, types } from "hardhat/config"
 
 import { EntryPoint__factory, IERC20__factory, SimpleAccount__factory, SimpleAccountFactory__factory } from "../types/typechain"
 import { verifyEtherscan } from "../utils/etherscan"
+import { logger } from "../utils/logger"
 import { getChain } from "../utils/network"
 import { resolveAddress, resolveToken } from "../utils/resolvers"
 import { getSigner, getSignerAccount } from "../utils/signer"
@@ -14,6 +15,8 @@ import type { providers } from "ethers"
 
 import type { SimpleAccountFactory } from "../types/typechain"
 
+const log = logger("task:account")
+
 task("account-factory-deploy", "Deploys a SimpleAccountFactory")
     .addOptionalParam("speed", "Defender Relayer speed param: 'safeLow' | 'average' | 'fast' | 'fastest'", "fast", types.string)
     .setAction(async (taskArgs, hre) => {
@@ -21,7 +24,13 @@ task("account-factory-deploy", "Deploys a SimpleAccountFactory")
         const chain = getChain(hre)
 
         const constructorArguments = [resolveAddress("EntryPoint", chain)]
-        await deployContract<SimpleAccountFactory>(new SimpleAccountFactory__factory(signer), "SimpleAccountFactory", constructorArguments)
+        const saf = await deployContract<SimpleAccountFactory>(
+            new SimpleAccountFactory__factory(signer),
+            "SimpleAccountFactory",
+            constructorArguments
+        )
+
+        console.log(`New SimpleAccountFactory contract deployed to ${saf.address}`)
     })
 
 task("account-create", "Deploys a new SimpleAccount using the factory")
@@ -102,9 +111,9 @@ task(
         })
 
         const signerWalletAddress = await walletAPI.getAccountAddress()
-        console.log(`Signer's abstract wallet ${signerWalletAddress}`)
+        log(`Signer's abstract wallet ${signerWalletAddress}`)
         const nonce = await walletAPI.getNonce()
-        console.log(`Signer's abstract wallet starting nonce: ${nonce}`)
+        log(`Signer's abstract wallet starting nonce: ${nonce}`)
 
         const tokens = taskArgs.tokens.split(",")
         const accounts = taskArgs.accounts.split(",")

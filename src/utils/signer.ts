@@ -2,6 +2,7 @@ import { DefenderRelayProvider, DefenderRelaySigner } from "defender-relay-clien
 import { Wallet } from "ethers"
 
 import { impersonate } from "./fork"
+import { logger } from "./logger"
 import { ethereumAddress, privateKey } from "./regex"
 
 import type { Speed } from "defender-relay-client"
@@ -9,6 +10,8 @@ import type { Signer } from "ethers"
 import type { HardhatRuntimeEnvironment } from "hardhat/types"
 
 import type { Account, HHSigner } from "../types"
+
+const log = logger("signer")
 
 export const getDefenderSigner = async (speed: Speed = "fast"): Promise<HHSigner> => {
     if (!process.env.DEFENDER_API_KEY || !process.env.DEFENDER_API_SECRET) {
@@ -39,7 +42,13 @@ export const getSigner = async (hre: HardhatRuntimeEnvironment, speed: Speed = "
             throw Error("Invalid format of private key")
         }
         signerInstance = new Wallet(pk, hre.ethers.provider)
-        console.log(`Using signer ${await signerInstance.getAddress()} from private key`)
+        log(`Using signer ${await signerInstance.getAddress()} from private key`)
+        return signerInstance
+    }
+
+    if (process.env.MNEMONIC) {
+        signerInstance = Wallet.fromMnemonic(process.env.MNEMONIC).connect(hre.ethers.provider)
+        log(`Using signer ${await signerInstance.getAddress()} from MNEMONIC env variable`)
         return signerInstance
     }
 
@@ -49,7 +58,7 @@ export const getSigner = async (hre: HardhatRuntimeEnvironment, speed: Speed = "
         if (!address.match(ethereumAddress)) {
             throw Error("Environment variable IMPERSONATE is an invalid Ethereum address")
         }
-        console.log(`Impersonating account ${address} from IMPERSONATE environment variable`)
+        log(`Impersonating account ${address} from IMPERSONATE environment variable`)
         signerInstance = await impersonate(address)
         return signerInstance
     }
@@ -58,13 +67,13 @@ export const getSigner = async (hre: HardhatRuntimeEnvironment, speed: Speed = "
     // this will work against test networks like Ropsten or Polygon's Mumbai
     if (process.env.DEFENDER_API_KEY && process.env.DEFENDER_API_SECRET) {
         signerInstance = (await getDefenderSigner(speed)) as Signer
-        console.log(`Using Defender Relay signer ${await signerInstance.getAddress()}`)
+        log(`Using Defender Relay signer ${await signerInstance.getAddress()}`)
         return signerInstance
     }
 
     const accounts = await hre.ethers.getSigners()
     signerInstance = accounts[0]
-    console.log(`Using signer ${await signerInstance.getAddress()} from first account in hardhat config`)
+    log(`Using signer ${await signerInstance.getAddress()} from first account in hardhat config`)
     return signerInstance
 }
 

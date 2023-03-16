@@ -1,6 +1,7 @@
 import { isAddress } from "ethers/lib/utils"
 
 import { IERC20Metadata__factory } from "../types/typechain/"
+import { logger } from "./logger"
 import { resolveNamedAddress } from "./namedAddress"
 import { Chain } from "./network"
 import { ethereumAddress } from "./regex"
@@ -13,6 +14,8 @@ import type { ContractNames } from "./namedAddress"
 
 // Singleton instances of different contract names and token symbols
 const resolvedAddressesInstances: { [contractNameSymbol: string]: string } = {}
+
+const log = logger("resolvers")
 
 // Resolves a contract name or token symbol to an ethereum address
 export const resolveAddress = (addressContractNameSymbol: string, chain = Chain.mainnet): string => {
@@ -32,14 +35,14 @@ export const resolveAddress = (addressContractNameSymbol: string, chain = Chain.
             if (!token.address) throw Error(`Can not find address for token "${addressContractNameSymbol}" on chain ${chain}`)
 
             address = token.address
-            console.log(`Resolved asset with symbol "${addressContractNameSymbol}" to address ${address}`)
+            log(`Resolved asset with symbol "${addressContractNameSymbol}" to address ${address}`)
 
             // Update the singleton instance so we don't need to resolve this next time
             resolvedAddressesInstances[addressContractNameSymbol] = address
             return address
         }
 
-        console.log(`Resolved contract name "${addressContractNameSymbol}" to address ${address}`)
+        log(`Resolved contract name "${addressContractNameSymbol}" to address ${address}`)
 
         // Update the singleton instance so we don't need to resolve this next time
         resolvedAddressesInstances[addressContractNameSymbol] = address
@@ -61,7 +64,7 @@ export const resolveToken = (symbol: string, chain = Chain.mainnet): Token => {
     if (!token) throw Error(`Can not find token symbol ${symbol} on chain ${chain}`)
     if (!token.address) throw Error(`Can not find token for ${symbol} on chain ${chain}`)
 
-    console.log(`Resolved token symbol ${symbol} to address ${token.address}`)
+    log(`Resolved token symbol ${symbol} to address ${token.address}`)
 
     resolvedTokenInstances[symbol] = token
 

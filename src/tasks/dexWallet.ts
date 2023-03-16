@@ -4,12 +4,15 @@ import { task, types } from "hardhat/config"
 
 import { DexWallet__factory, DexWalletFactory__factory } from "../types/typechain"
 import { verifyEtherscan } from "../utils/etherscan"
+import { logger } from "../utils/logger"
 import { getChain } from "../utils/network"
 import { resolveAddress } from "../utils/resolvers"
 import { getSigner, getSignerAccount } from "../utils/signer"
 import { deployContract, logTxDetails } from "../utils/transaction"
 
 import type { DexWalletFactory } from "../types/typechain"
+
+const log = logger("task:dex-wallet")
 
 task("dex-wallet-factory-deploy", "Deploys a DexWalletFactory")
     .addOptionalParam("speed", "Defender Relayer speed param: 'safeLow' | 'average' | 'fast' | 'fastest'", "fast", types.string)
@@ -19,6 +22,8 @@ task("dex-wallet-factory-deploy", "Deploys a DexWalletFactory")
 
         const constructorArguments = [resolveAddress("EntryPoint", chain)]
         const dwf = await deployContract<DexWalletFactory>(new DexWalletFactory__factory(signer), "DexWalletFactory", constructorArguments)
+
+        console.log(`New DexWalletFactory deployed to ${dwf.address}`)
 
         await verifyEtherscan(hre, {
             address: dwf.address,
