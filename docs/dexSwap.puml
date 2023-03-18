@@ -1,0 +1,126 @@
+@startuml
+
+title "Trusted Wallet Swap"
+
+actor "Market\nMaker" as mm
+actor "Market\nTaker" as mt
+' actor "Bundler" as b
+' participant "Entry\nPoint" as ep
+
+box "Blockchain" #LightCyan
+participant "Traker\nWallet" as tw
+participant "Maker\nWallet" as mw
+participant "Maker's\nToken In" as ta
+participant "Maker's\nToken Out" as tb
+end box
+
+mm --> mm : order
+note left
+token in
+amount in
+token out
+amount out
+expiry
+order id
+chain id
+end note
+mm --> mm : order > maker sig
+note left : sign order
+mm --> mt : order, maker sig
+note left : publish\norder & sig
+
+mt -> tw : takeSwap(\norder, maker, maker sig)
+activate tw
+
+'  Using Abstract Account
+' mt --> mt : order, sig 1\n> User Op
+' note left : make User\nOperation
+' mt --> mt : User Op > sig 2
+' note left : sign User\nOperation
+
+' mt --> b : User Operation, sig 2
+' ' note left : sign swap\noperation
+' b -> ep : handleOps(\n[User Operation])
+' activate ep
+' note left : submit bundled user operations
+' ep -> tw : validateUserOp(\nUser Operation)
+' activate tw
+
+
+tw -> tb : balanceOf(taker wallet)
+activate tb
+note left : get before out balance
+return taker wallet balance
+
+tw -> tw : storeSwap(maker, order)
+note left
+map hash(maker, order id) to:
+- maker
+- token in
+- amount in
+- token out
+- before out balance + amount out
+end note
+
+tw -> mw : makeSwap(\norder, maker sig)
+activate mw
+
+mw -> mw : verify(order, maker sig)
+note left
+verify
+- signature
+- expiry
+- chain id
+- order not used
+end note
+
+mw -> tb : transfer(\ntaker wallet, amount out)
+activate tb
+note left
+transfer out tokens
+from maker wallet
+to taker wallet
+end note
+return
+
+mw -> ta : balanceOf(maker wallet)
+activate ta
+note left : get before in balance
+return maker wallet balance
+
+mw -> tw : verifySwap(order id)
+activate tw
+note right : callback to taker wallet
+
+tw -> tb : balanceOf(taker wallet)
+activate tb
+note left : get after out balance
+return taker wallet balance
+
+tw -> tw : loadSwap(maker, order id)
+
+tw -> tw : verify(loaded swap,\nafter balance)
+note left : verify maker's transfer
+
+tw -> ta : transfer(\nmaker wallet, amount in)
+activate ta
+note left
+transfer in tokens
+from taker wallet
+to maker wallet
+end note
+return
+
+return
+mw -> ta : balanceOf(maker wallet)
+activate ta
+note left : get after in balance
+return maker wallet balance
+
+mw -> mw : verify(order)
+note left : verify taker's transfer
+
+return
+return
+
+@enduml

@@ -84,3 +84,8 @@ export const getSignerAccount = async (hre: HardhatRuntimeEnvironment, speed: Sp
         address: await signer.getAddress(),
     }
 }
+
+export const account = async (signer: Signer): Promise<Account> => ({
+    signer,
+    address: await signer.getAddress(),
+})

@@ -7,6 +7,8 @@ import "hardhat-abi-exporter"
 import "@nomiclabs/hardhat-etherscan"
 import "ts-node/register"
 
+import { DexWallet__factory } from "./src/types/typechain"
+
 import type { HardhatUserConfig } from "hardhat/types"
 
 // You need to export an object to set up your config
@@ -19,7 +21,7 @@ const config: HardhatUserConfig = {
                 version: "0.8.17",
                 settings: {
                     optimizer: { enabled: true, runs: 1000000 },
-                    viaIR: true,
+                    viaIR: false,
                 },
             },
         ],
@@ -55,6 +57,18 @@ const config: HardhatUserConfig = {
     gasReporter: {
         currency: "USD",
         gasPrice: 30,
+        remoteContracts: [
+            {
+                abi: DexWallet__factory.abi,
+                address: "0x32352F35E5Be22fC44C8930751F10B8618004F88",
+                name: "Maker Wallet",
+            },
+            {
+                abi: DexWallet__factory.abi,
+                address: "0xb259c4363AFBBC34fE8EbD2fdf86cC1e22730648",
+                name: "Taker Wallet",
+            },
+        ],
     },
     mocha: {
         timeout: 10000,

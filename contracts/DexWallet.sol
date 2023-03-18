@@ -5,6 +5,7 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IERC721 } from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import { SafeCast } from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
 import { IEntryPoint, SimpleAccount } from "./account-abstraction/samples/SimpleAccount.sol";
 
@@ -43,17 +44,33 @@ struct NFTOrder {
     uint256 chainId; // Chain ID of the network the order is to be executed on
 }
 
+struct SwapVerify {
+    address maker;
+    address tokenIn;
+    address tokenOut;
+    uint128 amountIn;
+    uint128 balanceOut;
+}
+
+interface IDex {
+    function makeSwap(SwapOrder calldata order, bytes calldata makerSignature) external;
+
+    function verifySwap(uint256 orderId) external;
+}
+
 contract DexWallet is SimpleAccount {
     using ECDSA for bytes32;
     using SafeERC20 for IERC20;
 
     // Reserve storage slots for fixed-sized, used order identifier array.
-    uint256 internal constant USED_ID_ARRAY_SIZE = 256;
+    uint256 internal constant USED_ID_ARRAY_SIZE = 4096;
     /// @notice Any order identifiers equal to or greater than this value are invalid.
     /// @dev There are 256 bits in a uint256, so we can store 256 identifier flags in a single storage slot.
     uint256 public constant MAX_ORDER_ID = 256 * USED_ID_ARRAY_SIZE;
     // This caps the number of orders to MAX_ORDER_ID but it's the most efficient way of storing bools.
     uint256[USED_ID_ARRAY_SIZE] usedOrderIds;
+
+    mapping(bytes32 => SwapVerify) public swapVerifiers;
 
     event OrderUsed(uint256 id);
 
@@ -63,21 +80,69 @@ contract DexWallet is SimpleAccount {
         _initialize(anOwner);
     }
 
-    /// @notice Swaps a whole amount of tokens.
-    function swapTokens(
+    function takeSwap(
         SwapOrder calldata order,
-        address recipient,
-        bytes calldata signature
-    ) external {
-        require(owner == hashSwapOrder(order).recover(signature), "invalid signature");
+        address maker,
+        bytes calldata makerSignature
+    ) external onlyOwner {
+        // Save VerifySwap
+        bytes32 verifyHash = _hashVerifySwap(maker, order.id);
+        swapVerifiers[verifyHash] = SwapVerify({
+            maker: maker,
+            tokenIn: order.tokenIn,
+            tokenOut: order.tokenOut,
+            amountIn: SafeCast.toUint128(order.amountIn),
+            balanceOut: SafeCast.toUint128(
+                IERC20(order.tokenOut).balanceOf(address(this)) + order.amountOut
+            )
+        });
+
+        IDex(maker).makeSwap(order, makerSignature);
+    }
+
+    /// @notice Swaps a whole amount of tokens.
+    function makeSwap(SwapOrder calldata order, bytes calldata makerSignature) external {
+        require(owner == hashSwapOrder(order).recover(makerSignature), "invalid signature");
         require(block.timestamp < order.expiry, "swap expired");
         require(order.chainId == block.chainid, "invalid chain");
         _checkOrderId(order.id);
 
-        IERC20(order.tokenIn).safeTransferFrom(msg.sender, address(this), order.amountIn);
+        // Transfer tokens from the maker to the taker
+        IERC20(order.tokenOut).safeTransfer(msg.sender, order.amountOut);
 
-        IERC20(order.tokenOut).safeTransfer(recipient, order.amountOut);
+        uint256 tokenInBalance = IERC20(order.tokenIn).balanceOf(address(this));
+
+        // Call taker to verify the swap and transfer their tokens
+        IDex(msg.sender).verifySwap(order.id);
+
+        // Verify the taker transferred their tokens
+        require(
+            IERC20(order.tokenIn).balanceOf(address(this)) >= tokenInBalance + order.amountIn,
+            "taker did not transfer"
+        );
     }
+
+    /// @notice Swap taker verifies the maker tansferred the maker's tokens and
+    /// sends the take's tokens to the maker.
+    function verifySwap(uint256 orderId) external {
+        // get order details
+        SwapVerify memory swap = swapVerifiers[_hashVerifySwap(msg.sender, orderId)];
+
+        // verify wallet has received tokens or ETH from the counterparty
+        require(msg.sender == swap.maker, "invalid maker");
+        require(
+            IERC20(swap.tokenOut).balanceOf(address(this)) >= swap.balanceOut,
+            "maker did not transfer"
+        );
+
+        // Hook to do other processing. eg arbitrage
+        _verigySwapHook(swap);
+
+        // transfer
+        IERC20(swap.tokenIn).safeTransfer(swap.maker, swap.amountIn);
+    }
+
+    function _verigySwapHook(SwapVerify memory swap) internal virtual {}
 
     /// @notice Checks the following:
     /// - the order signature was signed by the wallet signer
@@ -351,5 +416,9 @@ contract DexWallet is SimpleAccount {
                 order.chainId
             )
         ).toEthSignedMessageHash();
+    }
+
+    function _hashVerifySwap(address maker, uint256 orderId) internal pure returns (bytes32 hash) {
+        hash = keccak256(abi.encode(maker, orderId));
     }
 }
