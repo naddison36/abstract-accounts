@@ -132,7 +132,9 @@ contract DexWallet is SimpleAccount {
     /// sends the take's tokens to the maker.
     function verifySwap(uint256 orderId) external {
         // get order details
-        SwapVerify memory swap = swapVerifiers[_hashVerifySwap(msg.sender, orderId)];
+        bytes32 hash = _hashVerifySwap(msg.sender, orderId);
+        SwapVerify memory swap = swapVerifiers[hash];
+        delete swapVerifiers[hash];
 
         // verify wallet has received tokens or ETH from the counterparty
         require(msg.sender == swap.maker, "invalid maker");
