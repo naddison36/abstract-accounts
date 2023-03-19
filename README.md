@@ -98,6 +98,7 @@ Features:
 -   Whole swaps between two tokens.
 -   Buying or selling tokens at a fixed rate but to the available liquidity in the wallet.
 -   Buying or selling a batch of NFTs for a fixed token unit price.
+-   No approvals by either party.
 -   Expiry of orders.
 -   Canceling orders.
 -   Cross-chain replay protection.

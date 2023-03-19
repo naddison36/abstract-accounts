@@ -15,8 +15,7 @@
         "/abis",
         "!/contracts/**/*.sol",
         "/dist",
-        "!/dist/test",
-        "!/dist/test-fork"
+        "!/dist/test"
     ],
     "main": "./dist/index.js",
     "types": "./dist/index.d.ts",
@@ -75,7 +74,6 @@
         "hardhat-gas-reporter": "^1.0.9",
         "node-plantuml": "^0.9.0",
         "prettier": "^2.8.4",
-        "solc": "0.8.19",
         "solhint": "^3.3.7",
         "solidity-coverage": "^0.8.2",
         "ts-generator": "^0.1.1",

@@ -133,18 +133,18 @@ describe("DexWallet Unit Tests", () => {
             const maxQuoteAmount = parseUnits("1002", 6)
             // base amount = quote amount * 1e18 / exchange rate
             const maxBaseAmount = maxQuoteAmount.mul(parseUnits("1", 18)).div(exchangeRate)
-            const { baseAmount: baseAmountBefore, quoteAmount: quoteAmountBefore } = await makerWallet.maxExchange(order)
+            const { baseAmount: baseAmountBefore, quoteAmount: quoteAmountBefore } = await makerWallet.maxTokensExchange(order)
             expect(baseAmountBefore, "max base amount").to.equal(maxBaseAmount)
             expect(quoteAmountBefore, "max quote amount").to.equal(maxQuoteAmount)
 
             // Taker executes the swap
-            const swapTx = await takerWallet.takeExchangeTokens(order, expectedBaseAmount, makerWallet.address, makerSig)
+            const swapTx = await takerWallet.takeTokensExchange(order, expectedBaseAmount, makerWallet.address, makerSig)
             await logTxDetails(swapTx, "take exchange")
 
             expect(await makerWallet.orderUsed(0), "maker order 0 has not been cancelled").to.equal(false)
             expect(await makerWallet.orderUsed(1), "maker order 1 has not been cancelled").to.equal(false)
             expect(await takerWallet.orderUsed(1), "taker order 1 has not been cancelled").to.equal(false)
-            const { baseAmount: baseAmountAfter, quoteAmount: quoteAmountAfter } = await makerWallet.maxExchange(order)
+            const { baseAmount: baseAmountAfter, quoteAmount: quoteAmountAfter } = await makerWallet.maxTokensExchange(order)
             console.log(`baseAmountBefore  : ${baseAmountBefore.toString()}`)
             console.log(`baseAmountAfter   : ${baseAmountAfter.toString()}`)
             console.log(`expectedBaseAmount: ${expectedBaseAmount}`)
@@ -185,18 +185,18 @@ describe("DexWallet Unit Tests", () => {
             const maxBaseAmount = expectedBaseAmount
             // quote amount = base amount * exchange rate / 1e18
             const maxQuoteAmount = maxBaseAmount.mul(exchangeRate).div(parseUnits("1", 18))
-            const { baseAmount: baseAmountBefore, quoteAmount: quoteAmountBefore } = await makerWallet.maxExchange(order)
+            const { baseAmount: baseAmountBefore, quoteAmount: quoteAmountBefore } = await makerWallet.maxTokensExchange(order)
             expect(baseAmountBefore, "max base amount").to.equal(maxBaseAmount)
             expect(quoteAmountBefore, "max quote amount").to.equal(maxQuoteAmount)
 
             // Taker executes the swap
-            const swapTx = await takerWallet.takeExchangeTokens(order, expectedBaseAmount, makerWallet.address, makerSig)
+            const swapTx = await takerWallet.takeTokensExchange(order, expectedBaseAmount, makerWallet.address, makerSig)
             await logTxDetails(swapTx, "take exchange")
 
             expect(await makerWallet.orderUsed(0), "maker order 0 has not been cancelled").to.equal(false)
             expect(await makerWallet.orderUsed(1), "maker order 1 has not been cancelled").to.equal(false)
             expect(await takerWallet.orderUsed(1), "taker order 1 has not been cancelled").to.equal(false)
-            const { baseAmount: baseAmountAfter, quoteAmount: quoteAmountAfter } = await makerWallet.maxExchange(order)
+            const { baseAmount: baseAmountAfter, quoteAmount: quoteAmountAfter } = await makerWallet.maxTokensExchange(order)
             console.log(`baseAmountBefore  : ${baseAmountBefore.toString()}`)
             console.log(`baseAmountAfter   : ${baseAmountAfter.toString()}`)
             console.log(`expectedBaseAmount: ${expectedBaseAmount}`)
