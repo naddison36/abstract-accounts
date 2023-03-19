@@ -6,26 +6,46 @@ import { solidityKeccak256 } from "ethers/lib/utils"
 import { logger } from "./logger"
 
 import type { Signer } from "ethers"
-import type { SwapOrderStruct } from "src/types/typechain/contracts/DexWallet"
+import type { ExchangeOrderStruct, SwapOrderStruct } from "src/types/typechain/contracts/DexWallet.sol/DexWallet"
 
 const log = logger("order")
 
-export const hashOrder = async (order: SwapOrderStruct): Promise<string> => {
-    const orderHash = solidityKeccak256(
+export const hashSwapOrder = async (order: SwapOrderStruct): Promise<string> => {
+    const hash = solidityKeccak256(
         ["address", "uint256", "address", "uint256", "uint256", "uint256", "uint256"],
-        [order.tokenIn, order.amountIn, order.tokenOut, order.amountOut, order.id, order.expiry, order.chainId]
+        [order.makerTokenIn, order.makerAmountIn, order.makerTokenOut, order.makerAmountOut, order.id, order.expiry, order.chainId]
     )
-    log(`order hash: ${orderHash}`)
+    log(`swap order hash: ${hash}`)
 
-    return orderHash
+    return hash
 }
 
-export const signOrder = async (order: SwapOrderStruct, signer: Signer): Promise<string> => {
-    const hash = await hashOrder(order)
+export const signSwapOrder = async (order: SwapOrderStruct, signer: Signer): Promise<string> => {
+    const hash = await hashSwapOrder(order)
 
     // sign the order hash
     const signature = await signer.signMessage(utils.arrayify(hash))
-    log(`order signature: ${signature}`)
+    log(`swap order signature: ${signature}`)
+
+    return signature
+}
+
+export const hashExchangeOrder = async (order: ExchangeOrderStruct): Promise<string> => {
+    const hash = solidityKeccak256(
+        ["uint8", "address", "address", "uint256", "uint256", "uint256", "uint256"],
+        [order.exchangeType, order.baseToken, order.quoteToken, order.exchangeRate, order.id, order.expiry, order.chainId]
+    )
+    log(`exchange order hash: ${hash}`)
+
+    return hash
+}
+
+export const signExchangeOrder = async (order: ExchangeOrderStruct, signer: Signer): Promise<string> => {
+    const hash = await hashExchangeOrder(order)
+
+    // sign the order hash
+    const signature = await signer.signMessage(utils.arrayify(hash))
+    log(`exchange order signature: ${signature}`)
 
     return signature
 }

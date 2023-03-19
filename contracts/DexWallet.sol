@@ -10,13 +10,20 @@ import { SafeCast } from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import { IEntryPoint, SimpleAccount } from "./account-abstraction/samples/SimpleAccount.sol";
 
 struct SwapOrder {
-    address tokenIn; // The token being transferred from the market maker to the wallet
-    uint256 amountIn;
-    address tokenOut; // The token being transferred from the wallet to the market maker.
-    uint256 amountOut;
+    address makerTokenIn; // The token being transferred from the market maker to the wallet
+    uint256 makerAmountIn;
+    address makerTokenOut; // The token being transferred from the wallet to the market maker.
+    uint256 makerAmountOut;
     uint256 id; // Identify the order so it can be cancelled and not replayed
     uint256 expiry; // Expiry in seconds since epoch
     uint256 chainId; // Chain ID of the network the order is to be executed on
+}
+struct SwapVerify {
+    address maker;
+    address takerTokenIn;
+    address takerTokenOut;
+    uint128 takerAmountOut;
+    uint128 takerBalanceIn;
 }
 
 enum ExchangeType {
@@ -27,7 +34,7 @@ struct ExchangeOrder {
     ExchangeType exchangeType; // Buy or Sell of the base token relative to the wallet, which is the market maker.
     address baseToken; // The first token in the trading pair. eg WETH in WETH/USDC
     address quoteToken; // The second token in the trading pair. eg USDC in WETH/USDC
-    uint256 exchangeRate; // Rate of exchange from base token to quote token scaled by 1e18. eg USDC = exchange rate * WETH / 1e18
+    uint256 exchangeRate; // Rate of exchange from base token to quote token scaled by 1e18. eg exchange rate = quote * 1e18 / base
     uint256 id; // Identify the order so it can be cancelled and not replayed
     uint256 expiry; // Expiry in seconds since epoch
     uint256 chainId; // Chain ID of the network the order is to be executed on
@@ -44,16 +51,14 @@ struct NFTOrder {
     uint256 chainId; // Chain ID of the network the order is to be executed on
 }
 
-struct SwapVerify {
-    address maker;
-    address tokenIn;
-    address tokenOut;
-    uint128 amountIn;
-    uint128 balanceOut;
-}
-
 interface IDex {
     function makeSwap(SwapOrder calldata order, bytes calldata makerSignature) external;
+
+    function makeExchangeTokens(
+        ExchangeOrder calldata order,
+        uint256 baseAmount,
+        bytes calldata signature
+    ) external;
 
     function verifySwap(uint256 orderId) external;
 }
@@ -89,11 +94,11 @@ contract DexWallet is SimpleAccount {
         bytes32 verifyHash = _hashVerifySwap(maker, order.id);
         swapVerifiers[verifyHash] = SwapVerify({
             maker: maker,
-            tokenIn: order.tokenIn,
-            tokenOut: order.tokenOut,
-            amountIn: SafeCast.toUint128(order.amountIn),
-            balanceOut: SafeCast.toUint128(
-                IERC20(order.tokenOut).balanceOf(address(this)) + order.amountOut
+            takerTokenIn: order.makerTokenOut,
+            takerTokenOut: order.makerTokenIn,
+            takerAmountOut: SafeCast.toUint128(order.makerAmountIn),
+            takerBalanceIn: SafeCast.toUint128(
+                IERC20(order.makerTokenOut).balanceOf(address(this)) + order.makerAmountOut
             )
         });
 
@@ -105,19 +110,20 @@ contract DexWallet is SimpleAccount {
         require(owner == hashSwapOrder(order).recover(makerSignature), "invalid signature");
         require(block.timestamp < order.expiry, "swap expired");
         require(order.chainId == block.chainid, "invalid chain");
-        _checkOrderId(order.id);
+        _checkOrderId(order.id, true);
 
         // Transfer tokens from the maker to the taker
-        IERC20(order.tokenOut).safeTransfer(msg.sender, order.amountOut);
+        IERC20(order.makerTokenOut).safeTransfer(msg.sender, order.makerAmountOut);
 
-        uint256 tokenInBalance = IERC20(order.tokenIn).balanceOf(address(this));
+        uint256 tokenInBalance = IERC20(order.makerTokenIn).balanceOf(address(this));
 
         // Call taker to verify the swap and transfer their tokens
         IDex(msg.sender).verifySwap(order.id);
 
         // Verify the taker transferred their tokens
         require(
-            IERC20(order.tokenIn).balanceOf(address(this)) >= tokenInBalance + order.amountIn,
+            IERC20(order.makerTokenIn).balanceOf(address(this)) >=
+                tokenInBalance + order.makerAmountIn,
             "taker did not transfer"
         );
     }
@@ -131,18 +137,18 @@ contract DexWallet is SimpleAccount {
         // verify wallet has received tokens or ETH from the counterparty
         require(msg.sender == swap.maker, "invalid maker");
         require(
-            IERC20(swap.tokenOut).balanceOf(address(this)) >= swap.balanceOut,
+            IERC20(swap.takerTokenIn).balanceOf(address(this)) >= swap.takerBalanceIn,
             "maker did not transfer"
         );
 
         // Hook to do other processing. eg arbitrage
-        _verigySwapHook(swap);
+        _verifySwapHook(swap);
 
         // transfer
-        IERC20(swap.tokenIn).safeTransfer(swap.maker, swap.amountIn);
+        IERC20(swap.takerTokenOut).safeTransfer(swap.maker, swap.takerAmountOut);
     }
 
-    function _verigySwapHook(SwapVerify memory swap) internal virtual {}
+    function _verifySwapHook(SwapVerify memory swap) internal virtual {}
 
     /// @notice Checks the following:
     /// - the order signature was signed by the wallet signer
@@ -151,49 +157,92 @@ contract DexWallet is SimpleAccount {
     /// - the swap has not been cancelled by the wallet owner
     /// - there is enough liquidity in the wallet to execute the swap
     /// @return valid true if the swap order is still valid.
-    function isValidSwap(SwapOrder calldata order) external view returns (bool valid) {
+    function isValidSwap(
+        SwapOrder calldata order,
+        bytes calldata makerSignature
+    ) external view returns (bool valid) {
         valid =
+            owner == hashSwapOrder(order).recover(makerSignature) &&
             block.timestamp < order.expiry &&
             order.chainId == block.chainid &&
             !orderUsed(order.id) &&
-            IERC20(order.tokenOut).balanceOf(address(this)) >= order.amountOut;
+            IERC20(order.makerTokenOut).balanceOf(address(this)) >= order.makerAmountOut;
+    }
+
+    function takeExchangeTokens(
+        ExchangeOrder calldata order,
+        uint256 baseAmount,
+        address maker,
+        bytes calldata makerSignature
+    ) external onlyOwner {
+        uint256 quoteAmount = (baseAmount * order.exchangeRate) / 1e18;
+        // Save VerifySwap
+        bytes32 verifyHash = _hashVerifySwap(maker, order.id);
+        if (order.exchangeType == ExchangeType.BUY) {
+            swapVerifiers[verifyHash] = SwapVerify({
+                maker: maker,
+                takerTokenOut: order.baseToken,
+                takerTokenIn: order.quoteToken,
+                takerAmountOut: SafeCast.toUint128(baseAmount),
+                takerBalanceIn: SafeCast.toUint128(
+                    IERC20(order.quoteToken).balanceOf(address(this)) + quoteAmount
+                )
+            });
+        } else {
+            swapVerifiers[verifyHash] = SwapVerify({
+                maker: maker,
+                takerTokenOut: order.quoteToken,
+                takerTokenIn: order.baseToken,
+                takerAmountOut: SafeCast.toUint128(quoteAmount),
+                takerBalanceIn: SafeCast.toUint128(
+                    IERC20(order.baseToken).balanceOf(address(this)) + baseAmount
+                )
+            });
+        }
+
+        IDex(maker).makeExchangeTokens(order, baseAmount, makerSignature);
     }
 
     /// @notice Exchanges a variable amount of tokens at a fixed rate.
     /// @param order The order to execute of type ExchangeOrder.
     /// @param baseAmount The amount of base tokens that are to be bought or sold.
-    /// @param recipient The address to send the exchanged tokens to.
-    function exchangeTokens(
+    function makeExchangeTokens(
         ExchangeOrder calldata order,
         uint256 baseAmount,
-        address recipient,
         bytes calldata signature
     ) external {
         require(owner == hashExchangeOrder(order).recover(signature), "invalid signature");
         require(block.timestamp < order.expiry, "swap expired");
         require(order.chainId == block.chainid, "invalid chain");
-        _checkOrderId(order.id);
+        _checkOrderId(order.id, false);
 
+        address tokenIn;
+        uint256 amountIn;
+        uint256 quoteAmount = (baseAmount * order.exchangeRate) / 1e18;
         if (order.exchangeType == ExchangeType.BUY) {
-            // Transfer in the base token
-            IERC20(order.baseToken).safeTransferFrom(msg.sender, address(this), baseAmount);
+            tokenIn = order.baseToken;
+            amountIn = baseAmount;
 
             // Transfer out the quote token
-            IERC20(order.quoteToken).safeTransfer(
-                recipient,
-                (baseAmount * order.exchangeRate) / 1e18
-            );
+            IERC20(order.quoteToken).safeTransfer(msg.sender, quoteAmount);
         } else {
-            // Transfer in the quote token
-            IERC20(order.quoteToken).safeTransferFrom(
-                msg.sender,
-                address(this),
-                (baseAmount * order.exchangeRate) / 1e18
-            );
-
             // Transfer out the base token
-            IERC20(order.baseToken).safeTransfer(recipient, baseAmount);
+            IERC20(order.baseToken).safeTransfer(msg.sender, baseAmount);
+
+            tokenIn = order.quoteToken;
+            amountIn = quoteAmount;
         }
+
+        uint256 tokenInBalance = IERC20(tokenIn).balanceOf(address(this));
+
+        // Call taker to verify the swap and transfer their tokens
+        IDex(msg.sender).verifySwap(order.id);
+
+        // Verify the taker transferred their tokens
+        require(
+            IERC20(tokenIn).balanceOf(address(this)) >= tokenInBalance + amountIn,
+            "taker did not transfer"
+        );
     }
 
     /// @notice Calculates the maximum amount of tokens that can be exchanged at a fixed rate.
@@ -201,7 +250,7 @@ contract DexWallet is SimpleAccount {
         ExchangeOrder calldata order
     ) external view returns (uint256 baseAmount, uint256 quoteAmount) {
         if (
-            block.timestamp >= order.expiry || order.chainId == block.chainid || orderUsed(order.id)
+            block.timestamp >= order.expiry || order.chainId != block.chainid || orderUsed(order.id)
         ) {
             return (0, 0);
         }
@@ -221,40 +270,34 @@ contract DexWallet is SimpleAccount {
     /// If its a buy order and the wallet transfer the NFT, the order can be reexecuted if not expired or cancelled.
     /// @param order The order to execute of type NFTOrder.
     /// @param exchangeIds The token IDs the market taker wants to exchange. This can be a subset of what's in the order.
-    /// @param recipient The address to send the settlement tokens if a Buy order, or NFTs if a Sell order.
-    function exchangeNFTs(
+    function makeExchangeNFTs(
         NFTOrder calldata order,
         uint256[] calldata exchangeIds,
-        address recipient,
         bytes calldata signature
     ) external {
         require(owner == hashNFTOrder(order).recover(signature), "invalid signature");
         require(block.timestamp < order.expiry, "swap expired");
         require(order.chainId == block.chainid, "invalid chain");
-        _checkOrderId(order.id);
+        _checkOrderId(order.id, false);
 
         uint256 nftLen = exchangeIds.length;
 
-        if (order.exchangeType == ExchangeType.BUY) {
-            for (uint256 i; i < nftLen; ) {
-                // validate that the tokenId is in the order
-                require(_inSet(order.tokenIds, exchangeIds[i]), "invalid id");
+        unchecked {
+            if (order.exchangeType == ExchangeType.BUY) {
+                for (uint256 i; i < nftLen; ++i) {
+                    // validate that the tokenId is in the order
+                    require(_inSet(order.tokenIds, exchangeIds[i]), "invalid id");
 
-                // Transfer in the NFT
-                IERC721(order.nft).safeTransferFrom(msg.sender, address(this), exchangeIds[i]);
-                unchecked {
-                    ++i;
+                    // Transfer in the NFT
+                    IERC721(order.nft).safeTransferFrom(msg.sender, address(this), exchangeIds[i]);
                 }
-            }
-        } else {
-            for (uint256 i; i < nftLen; ) {
-                // validate that the tokenId is in the order
-                require(_inSet(order.tokenIds, exchangeIds[i]), "invalid id");
+            } else {
+                for (uint256 i; i < nftLen; ++i) {
+                    // validate that the tokenId is in the order
+                    require(_inSet(order.tokenIds, exchangeIds[i]), "invalid id");
 
-                // Transfer out the NFT
-                IERC721(order.nft).safeTransferFrom(address(this), recipient, exchangeIds[i]);
-                unchecked {
-                    ++i;
+                    // Transfer out the NFT
+                    IERC721(order.nft).safeTransferFrom(address(this), msg.sender, exchangeIds[i]);
                 }
             }
         }
@@ -262,7 +305,7 @@ contract DexWallet is SimpleAccount {
         uint256 settleAmount = nftLen * order.price;
         if (order.exchangeType == ExchangeType.BUY) {
             // Transfer out the settlement tokens
-            IERC20(order.settleToken).safeTransfer(recipient, settleAmount);
+            IERC20(order.settleToken).safeTransfer(msg.sender, settleAmount);
         } else {
             // Transfer in the settlement tokens
             IERC20(order.settleToken).safeTransferFrom(msg.sender, address(this), settleAmount);
@@ -270,12 +313,11 @@ contract DexWallet is SimpleAccount {
     }
 
     function _inSet(uint256[] memory tokenIds, uint256 tokenId) internal pure returns (bool) {
-        for (uint256 i; i < tokenIds.length; ) {
-            if (tokenIds[i] == tokenId) {
-                return true;
-            }
-            unchecked {
-                ++i;
+        unchecked {
+            for (uint256 i; i < tokenIds.length; ++i) {
+                if (tokenIds[i] == tokenId) {
+                    return true;
+                }
             }
         }
         return false;
@@ -290,48 +332,37 @@ contract DexWallet is SimpleAccount {
             return tokenIds;
         }
 
-        // Loop through each of the NFTs in the order and check if they can still be exchanged
-        uint256 nftLen = order.tokenIds.length;
-        uint256[] memory allTokenIds = new uint256[](nftLen);
-        uint256 available = 0;
-        if (order.exchangeType == ExchangeType.BUY) {
-            // Check each of the NFTs to see if they are not yet owned by the wallet
-            for (uint256 i; i < nftLen; ) {
-                if (address(this) != IERC721(order.nft).ownerOf(tokenIds[i])) {
-                    allTokenIds[i] = tokenIds[i];
-                    unchecked {
+        unchecked {
+            // Loop through each of the NFTs in the order and check if they can still be exchanged
+            uint256 nftLen = order.tokenIds.length;
+            uint256[] memory allTokenIds = new uint256[](nftLen);
+            uint256 available = 0;
+            if (order.exchangeType == ExchangeType.BUY) {
+                // Check each of the NFTs to see if they are not yet owned by the wallet
+                for (uint256 i; i < nftLen; ++i) {
+                    if (address(this) != IERC721(order.nft).ownerOf(tokenIds[i])) {
+                        allTokenIds[i] = tokenIds[i];
                         ++available;
                     }
                 }
-                unchecked {
-                    ++i;
-                }
-            }
-        } else {
-            // Check each of the NFTs to see if they are still owned by the wallet
-            for (uint256 i; i < nftLen; ) {
-                if (address(this) == IERC721(order.nft).ownerOf(tokenIds[i])) {
-                    allTokenIds[i] = tokenIds[i];
-                    unchecked {
+            } else {
+                // Check each of the NFTs to see if they are still owned by the wallet
+                for (uint256 i; i < nftLen; ++i) {
+                    if (address(this) == IERC721(order.nft).ownerOf(tokenIds[i])) {
+                        allTokenIds[i] = tokenIds[i];
                         ++available;
                     }
                 }
-                unchecked {
-                    ++i;
-                }
             }
-        }
 
-        // Copy the available NFTs into the returned tokenIds array
-        // This just contains the available NFTs for the order.
-        tokenIds = new uint256[](available);
-        uint256 j = 0;
-        for (uint256 i; i < nftLen; ) {
-            if (allTokenIds[i] > 0) {
-                tokenIds[j] = allTokenIds[i];
-            }
-            unchecked {
-                ++i;
+            // Copy the available NFTs into the returned tokenIds array
+            // This just contains the available NFTs for the order.
+            tokenIds = new uint256[](available);
+            uint256 j = 0;
+            for (uint256 i; i < nftLen; ++i) {
+                if (allTokenIds[i] > 0) {
+                    tokenIds[j] = allTokenIds[i];
+                }
                 ++j;
             }
         }
@@ -339,7 +370,7 @@ contract DexWallet is SimpleAccount {
 
     /// @notice check if the order identifier has been used before or cancelled.
     /// If not, mark the id as being used.
-    function _checkOrderId(uint256 id) internal {
+    function _checkOrderId(uint256 id, bool update) internal {
         require(id < MAX_ORDER_ID, "id too high");
         uint256 arrayIndex = id / 256;
         uint256 slotIndex = id % 256;
@@ -347,10 +378,12 @@ contract DexWallet is SimpleAccount {
         uint256 slotData = usedOrderIds[arrayIndex];
         require((slotData >> slotIndex) & 1 == 0, "id already used");
 
-        // Update the order id flag in storage
-        usedOrderIds[arrayIndex] = slotData | (1 << slotIndex);
+        if (update) {
+            // Update the order id flag in storage
+            usedOrderIds[arrayIndex] = slotData | (1 << slotIndex);
 
-        emit OrderUsed(id);
+            emit OrderUsed(id);
+        }
     }
 
     /// @return used true if the order has already been used in a swap or was cancelled.
@@ -363,24 +396,17 @@ contract DexWallet is SimpleAccount {
     }
 
     function cancelSwap(uint256 id) external onlyOwner {
-        require(id < MAX_ORDER_ID, "id too high");
-        uint256 arrayIndex = id / 256;
-        uint256 slotIndex = id % 256;
-
-        // Update the id flag in storage
-        usedOrderIds[arrayIndex] = usedOrderIds[arrayIndex] | (1 << slotIndex);
-
-        emit OrderUsed(id);
+        _checkOrderId(id, true);
     }
 
     // TODO move to EIP-712 hashes so the signer can see what they are signing rather than just a hash
     function hashSwapOrder(SwapOrder calldata order) public pure returns (bytes32 hash) {
         hash = keccak256(
             abi.encodePacked(
-                order.tokenIn,
-                order.amountIn,
-                order.tokenOut,
-                order.amountOut,
+                order.makerTokenIn,
+                order.makerAmountIn,
+                order.makerTokenOut,
+                order.makerAmountOut,
                 order.id,
                 order.expiry,
                 order.chainId

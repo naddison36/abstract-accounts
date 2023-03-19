@@ -26,3 +26,8 @@ export interface VerifyEtherscan {
         [libraryName: string]: string
     }
 }
+
+export enum ExchangeType {
+    BUY,
+    SELL
+}
