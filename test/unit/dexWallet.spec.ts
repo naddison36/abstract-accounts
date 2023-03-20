@@ -233,7 +233,7 @@ describe("DexWallet Unit Tests", () => {
             expect(quoteAmountAfter.div(100), "max quote amount").to.equal(quoteAmountBefore.sub(expectedQuoteAmount).div(100))
         })
     })
-    describe.only("Exchange NFTs", () => {
+    describe("Exchange NFTs", () => {
         let makerWallet: DexWallet
         let takerWallet: DexWallet
         let mockNFT: MockNFT
@@ -270,10 +270,6 @@ describe("DexWallet Unit Tests", () => {
             expect(await mockNFT.ownerOf(1), "maker's wallet owns NFT 1 before").to.eq(makerWallet.address)
             expect(await mockNFT.balanceOf(makerWallet.address), "maker's wallet NFTs before").to.eq(3)
             expect(await mockNFT.balanceOf(takerWallet.address), "taker's wallet NFTs after").to.eq(3)
-            log(`makerWallet: ${makerWallet.address}`)
-            log(`takerWallet: ${takerWallet.address}`)
-            log(`deployer: ${deployer.address}`)
-            log(`mockNFT: ${mockNFT.address}`)
 
             // Maker signs NFT exchange
             const order: NFTOrderStruct = {
@@ -296,7 +292,40 @@ describe("DexWallet Unit Tests", () => {
             expect(await mockNFT.balanceOf(takerWallet.address), "taker's wallet NFTs after").to.eq(4)
         })
 
-        it("maker should but two NFTs", async () => {
+        it("maker should sell all 3 NFTs", async () => {
+            // Transfer some A tokens to taker's wallet
+            await tokenA.transfer(takerWallet.address, parseUnits("15.003", TokenA.decimals))
+
+            expect(await mockNFT.ownerOf(0), "maker's wallet owns NFT 0 before").to.eq(makerWallet.address)
+            expect(await mockNFT.ownerOf(1), "maker's wallet owns NFT 1 before").to.eq(makerWallet.address)
+            expect(await mockNFT.ownerOf(2), "maker's wallet owns NFT 2 before").to.eq(makerWallet.address)
+            expect(await mockNFT.balanceOf(makerWallet.address), "maker's wallet NFTs before").to.eq(3)
+            expect(await mockNFT.balanceOf(takerWallet.address), "taker's wallet NFTs after").to.eq(3)
+
+            // Maker signs NFT exchange
+            const order: NFTOrderStruct = {
+                exchangeType: ExchangeType.SELL,
+                nft: mockNFT.address,
+                tokenIds: [0, 1, 2],
+                settleToken: tokenA.address,
+                price: parseUnits("5.001", TokenA.decimals),
+                id: 1,
+                expiry: (await getTimestamp()).add(60),
+                chainId,
+            }
+            const makerSig = await signNFTOrder(order, maker.signer)
+
+            const tx = await takerWallet.takeNFTsExchange(order, [0, 1, 2], makerWallet.address, makerSig)
+            await logTxDetails(tx, "take sell 3 NFTs exchange")
+
+            expect(await mockNFT.ownerOf(0), "taker owns NFT 0 after").to.eq(takerWallet.address)
+            expect(await mockNFT.ownerOf(1), "taker owns NFT 1 after").to.eq(takerWallet.address)
+            expect(await mockNFT.ownerOf(2), "taker owns NFT 2 after").to.eq(takerWallet.address)
+            expect(await mockNFT.balanceOf(makerWallet.address), "maker's wallet NFTs after").to.eq(0)
+            expect(await mockNFT.balanceOf(takerWallet.address), "taker's wallet NFTs after").to.eq(6)
+        })
+
+        it("maker should buy two NFTs", async () => {
             // Transfer some A tokens to taker's wallet
             await tokenA.transfer(makerWallet.address, parseUnits("10", TokenA.decimals))
 
@@ -323,7 +352,7 @@ describe("DexWallet Unit Tests", () => {
             const makerSig = await signNFTOrder(order, maker.signer)
 
             const tx = await takerWallet.takeNFTsExchange(order, [3, 4], makerWallet.address, makerSig)
-            await logTxDetails(tx, "take buy NFT exchange")
+            await logTxDetails(tx, "take buy 2 NFTs exchange")
 
             expect(await mockNFT.ownerOf(3), "maker owns NFT 1 after").to.eq(makerWallet.address)
             expect(await mockNFT.balanceOf(makerWallet.address), "maker's wallet NFTs after").to.eq(5)
