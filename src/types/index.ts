@@ -11,6 +11,7 @@ export interface Account {
 }
 
 export interface Token {
+    name?: string
     symbol: string
     address: string
     chain: Chain
@@ -29,5 +30,5 @@ export interface VerifyEtherscan {
 
 export enum ExchangeType {
     BUY,
-    SELL
+    SELL,
 }

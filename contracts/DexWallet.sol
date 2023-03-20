@@ -358,7 +358,7 @@ contract DexWallet is SimpleAccount {
                     require(_inSet(order.tokenIds, exchangeIds[i]), "invalid id");
 
                     // Transfer out the NFT
-                    IERC721(order.nft).safeTransferFrom(address(this), msg.sender, exchangeIds[i]);
+                    IERC721(order.nft).transferFrom(address(this), msg.sender, exchangeIds[i]);
 
                     settleBalance = IERC20(order.settleToken).balanceOf(address(this));
                 }
@@ -410,7 +410,7 @@ contract DexWallet is SimpleAccount {
             // Transfer out each of the exchanged NFTs
             uint256 nftLen = verifyData.tokenIds.length;
             for (uint256 i; i < nftLen; ++i) {
-                IERC721(verifyData.nft).safeTransferFrom(
+                IERC721(verifyData.nft).transferFrom(
                     address(this),
                     msg.sender,
                     verifyData.tokenIds[i]
@@ -492,6 +492,11 @@ contract DexWallet is SimpleAccount {
                 ++j;
             }
         }
+    }
+
+    // required to receive ERC721 tokens when `safeTransferFrom` is used.
+    function onERC721Received() external pure returns (bytes4 selector) {
+        selector = this.onERC721Received.selector;
     }
 
     /// @notice check if the order identifier has been used before or cancelled.
