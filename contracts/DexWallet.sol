@@ -10,8 +10,15 @@ import { SafeCast } from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import { IEntryPoint, SimpleAccount } from "./account-abstraction/samples/SimpleAccount.sol";
 import { IDexWallet } from "./IDexWallet.sol";
 
+enum ExchangeType {
+    BUY,
+    SELL
+}
+
 /**
- * @notice is from the perspective of the market maker.
+ * @notice Swaps a whole amount of tokens for another whole amoutn of token.
+ * Is from the perspective of the market maker, so tokens `in` are from the taker to the maker, `out` is from the maker to the taker.
+ * This is what the market maker hashes and signs to authorise the execution of the token swap.
  * @param makerTokenIn The token being transferred from the market taker to the marker maker's wallet.
  * @param makerAmountIn The amount of tokens being transferred from the market taker to the market maker's wallet.
  * @param makerTokenOut The token being transferred from the market maker's wallet to the market taker.
@@ -20,7 +27,7 @@ import { IDexWallet } from "./IDexWallet.sol";
  * @param expiry Expiry in seconds since epoch.
  * @param chainId Chain ID of the network the order is to be executed on.
  */
-struct SwapOrder {
+struct SwapTokenOrder {
     address makerTokenIn;
     uint256 makerAmountIn;
     address makerTokenOut;
@@ -30,13 +37,14 @@ struct SwapOrder {
     uint256 chainId;
 }
 /**
- * @notice is from the perspective of the market taker.
+ * @notice What the market taker stores between calling the market maker and waiting to be called back to verify the token swap or exchange.
+ * This is from the perspective of the market taker, so tokens `in` are from the maker to the taker, `out` is from the taker to the maker.
  * @param maker The address of the market maker's wallet.
  * @param takerTokenIn The token being transferred from the market taker to the marker taker's wallet.
  * @param takerTokenOut The token being transferred from the market taker's wallet to the market maker.
  * @param takerAmountOut The amount of tokens being transferred from the market taker's wallet to the market maker.
  * @param takerBalanceIn The expected balance of the `takerTokenIn` tokens in the market taker's wallet after the swap.
- * takerBalanceIn = before balance of SwapOrder's makerTokenOut + SwapOrder's makerAmountOut
+ * takerBalanceIn = before balance of `makerTokenOut` + `makerAmountOut`
  */
 struct TokensVerify {
     address maker;
@@ -46,19 +54,18 @@ struct TokensVerify {
     uint128 takerBalanceIn;
 }
 
-enum ExchangeType {
-    BUY,
-    SELL
-}
 /**
- * @notice is from the perspective of the market maker.
+ * @notice Swaps a specified amount of base tokens at a fixed exchange rate to a number of quote tokens.
+ * This is from the perspective of the market maker, so buy means the market maker is buying the base tokens from the taker,
+ * sell means the market maker is selling the base tokens to the taker.
+ * This is what the market maker hashes and signs to authorise the execution of the token exchange.
  * @param exchangeType Buy or Sell of the base token relative to the market maker's wallet.
- * @param baseToken The first token in the trading pair. eg WETH in WETH/USDC
- * @param quoteToken The second token in the trading pair. eg USDC in WETH/USDC
- * @param exchangeRate Rate of exchange from base token to quote token scaled by 1e18. eg exchange rate = quote * 1e18 / base
- * @param id Identify the order so it can be cancelled and not replayed
- * @param expiry Expiry in seconds since epoch
- * @param chainId Chain ID of the network the order is to be executed on
+ * @param baseToken The first token in the trading pair. eg WETH in WETH/USDC.
+ * @param quoteToken The second token in the trading pair. eg USDC in WETH/USDC.
+ * @param exchangeRate Rate of exchange from base token to quote token scaled by 1e18. eg exchange rate = quote tokens * 1e18 / base tokens.
+ * @param id Identify the order so it can be cancelled and not replayed.
+ * @param expiry Expiry in seconds since epoch.
+ * @param chainId Chain ID of the network the order is to be executed on.
  */
 struct ExchangeOrder {
     ExchangeType exchangeType;
@@ -71,7 +78,27 @@ struct ExchangeOrder {
 }
 
 /**
- * @notice is from the perspective of the market maker.
+ * @notice Swaps a specified amount of tokens at a fixed exchange rate to a ether.
+ * This is from the perspective of the market maker, so buy means the market maker is buying the tokens from the taker,
+ * sell means the market maker is selling the tokens to the taker.
+ * @param exchangeType Buy or Sell of the base token relative to the market maker's wallet.
+ * @param token The token to be exchanged for ether.
+ * @param exchangeRate Rate of exchange from token to ether scaled by 1e18. eg exchange rate = wei * 1e18 / tokens.
+ * @param id Identify the order so it can be cancelled and not replayed.
+ * @param expiry Expiry in seconds since epoch.
+ * @param chainId Chain ID of the network the order is to be executed on.
+ */
+struct ExchangeEthOrder {
+    ExchangeType exchangeType;
+    address token;
+    uint256 exchangeRate;
+    uint256 id;
+    uint256 expiry;
+    uint256 chainId;
+}
+
+/**
+ * @notice Buy or sell all or a subset of NFTs for tokens from the perspective of the market maker.
  * @param exchangeType Buy or Sell of the NFTs relative to the market maker's wallet.
  * @param nft The address of the NFT contract.
  * @param tokenIds The NFT token IDs that are being bought or sold.
@@ -82,12 +109,77 @@ struct ExchangeOrder {
  * @param expiry Expiry in seconds since epoch
  * @param chainId Chain ID of the network the order is to be executed on
  */
-struct NFTOrder {
+struct NFTUnitTokenOrder {
     ExchangeType exchangeType;
     address nft;
     uint256[] tokenIds;
     address settleToken;
     uint256 price;
+    uint256 id;
+    uint256 expiry;
+    uint256 chainId;
+}
+
+/**
+ * @notice Buy or sell all NFTs in exchange for tokens from the perspective of the market maker.
+ * @param exchangeType Buy or Sell of the NFTs relative to the market maker's wallet.
+ * @param nft The address of the NFT contract.
+ * @param tokenIds The NFT token IDs that are being bought or sold.
+ * @param settleToken The token the NFTs are being bought or sold for. eg WETH or USDC
+ * @param settleAmount The amount of settlement tokens for all NFTs being bought or sold.
+ * @param id Identify the order so it can be cancelled and not replayed
+ * @param expiry Expiry in seconds since epoch
+ * @param chainId Chain ID of the network the order is to be executed on
+ */
+struct NFTBundleTokenOrder {
+    ExchangeType exchangeType;
+    address nft;
+    uint256[] tokenIds;
+    address settleToken;
+    uint256 settleAmount;
+    uint256 id;
+    uint256 expiry;
+    uint256 chainId;
+}
+
+/**
+ * @notice Buy or sell all or a subset of NFTs for tokens from the perspective of the market maker.
+ * @param exchangeType Buy or Sell of the NFTs relative to the market maker's wallet.
+ * @param nft The address of the NFT contract.
+ * @param tokenIds The NFT token IDs that are being bought or sold.
+ * @param settleToken The token the NFTs are being bought or sold for. eg WETH or USDC
+ * @param price Unit price of each NFT in wei. So if selling 3 NFTs for 1 ETH each,
+ * the price would be 1e18 as ETH has 18 decimal places.
+ * @param id Identify the order so it can be cancelled and not replayed
+ * @param expiry Expiry in seconds since epoch
+ * @param chainId Chain ID of the network the order is to be executed on
+ */
+struct NFTUnitETHOrder {
+    ExchangeType exchangeType;
+    address nft;
+    uint256[] tokenIds;
+    address settleToken;
+    uint256 price;
+    uint256 id;
+    uint256 expiry;
+    uint256 chainId;
+}
+
+/**
+ * @notice Buy or sell all NFTs in exchange for ETH from the perspective of the market maker.
+ * @param exchangeType Buy or Sell of the NFTs relative to the market maker's wallet.
+ * @param nft The address of the NFT contract.
+ * @param tokenIds The NFT token IDs that are being bought or sold.
+ * @param value The amount of wei for all NFTs being bought or sold. 1 ETH = 1e18 wei.
+ * @param id Identify the order so it can be cancelled and not replayed
+ * @param expiry Expiry in seconds since epoch
+ * @param chainId Chain ID of the network the order is to be executed on
+ */
+struct NFTBundleETHOrder {
+    ExchangeType exchangeType;
+    address nft;
+    uint256[] tokenIds;
+    uint256 value;
     uint256 id;
     uint256 expiry;
     uint256 chainId;
@@ -137,10 +229,11 @@ contract DexWallet is SimpleAccount {
     /// Order 34 is the third bit in the second array position.
     uint256[USED_ID_ARRAY_SIZE] public usedOrderIds;
 
-    /// @notice used by the market taker to store token swap data between calling the market maket's wallet and
+    /// @notice used by the market taker to store token swap data between calling the market maker's wallet and
     // the maker maker's wallet calling the this contact back again.
-    mapping(bytes32 => TokensVerify) public tokenVerifiers;
-    /// @notice used by the market taker to store NFT swap data between calling the market maket's wallet and
+    mapping(bytes32 => TokensVerify) public tokensVerifiers;
+
+    /// @notice used by the market taker to store NFT swap data between calling the market maker's wallet and
     // the maker maker's wallet calling the this contact back again.
     mapping(bytes32 => NftVerify) public nftVerifiers;
 
@@ -155,14 +248,14 @@ contract DexWallet is SimpleAccount {
         _initialize(aaOwner);
     }
 
-    function takeSwap(
-        SwapOrder calldata order,
+    function takeTokenSwap(
+        SwapTokenOrder calldata order,
         address maker,
         bytes calldata makerSignature
     ) external onlyOwner {
         // Save VerifySwap
         bytes32 verifyHash = _hashVerifier(maker, order.id);
-        tokenVerifiers[verifyHash] = TokensVerify({
+        tokensVerifiers[verifyHash] = TokensVerify({
             maker: maker,
             takerTokenIn: order.makerTokenOut,
             takerTokenOut: order.makerTokenIn,
@@ -172,11 +265,11 @@ contract DexWallet is SimpleAccount {
             )
         });
 
-        IDexWallet(maker).makeSwap(order, makerSignature);
+        IDexWallet(maker).makeTokenSwap(order, makerSignature);
     }
 
     /// @notice Swaps a whole amount of tokens.
-    function makeSwap(SwapOrder calldata order, bytes calldata makerSignature) external {
+    function makeTokenSwap(SwapTokenOrder calldata order, bytes calldata makerSignature) external {
         require(owner == hashSwapOrder(order).recover(makerSignature), "invalid signature");
         require(block.timestamp < order.expiry, "swap expired");
         require(order.chainId == block.chainid, "invalid chain");
@@ -203,24 +296,34 @@ contract DexWallet is SimpleAccount {
     function verifyTokens(uint256 orderId) external {
         // get order details
         bytes32 hash = _hashVerifier(msg.sender, orderId);
-        TokensVerify memory swap = tokenVerifiers[hash];
-        delete tokenVerifiers[hash];
+        TokensVerify memory swap = tokensVerifiers[hash];
+        delete tokensVerifiers[hash];
 
-        // verify wallet has received tokens or ETH from the counterparty
+        // verify wallet has received tokens or ether from the market maker
         require(msg.sender == swap.maker, "invalid maker");
-        require(
-            IERC20(swap.takerTokenIn).balanceOf(address(this)) >= swap.takerBalanceIn,
-            "maker did not transfer"
-        );
+        if (swap.takerTokenIn == 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE) {
+            require(address(this).balance >= swap.takerBalanceIn, "maker did not transfer ether");
+        } else {
+            require(
+                IERC20(swap.takerTokenIn).balanceOf(address(this)) >= swap.takerBalanceIn,
+                "maker did not transfer tokens"
+            );
+        }
 
         // Hook to do other processing. eg arbitrage
-        _verifyTokenHook(swap);
+        _verifyTokensHook(swap);
 
-        // transfer
-        IERC20(swap.takerTokenOut).safeTransfer(swap.maker, swap.takerAmountOut);
+        // transfer ether or tokens to the taker
+        if (swap.takerTokenOut == 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE) {
+            // Transfer out the ether
+            payable(msg.sender).transfer(swap.takerAmountOut);
+        } else {
+            // Transfer out the tokens
+            IERC20(swap.takerTokenOut).safeTransfer(swap.maker, swap.takerAmountOut);
+        }
     }
 
-    function _verifyTokenHook(TokensVerify memory swap) internal virtual {}
+    function _verifyTokensHook(TokensVerify memory swap) internal virtual {}
 
     /// @notice Checks the following:
     /// - the order signature was signed by the wallet signer
@@ -230,7 +333,7 @@ contract DexWallet is SimpleAccount {
     /// - there is enough liquidity in the wallet to execute the swap
     /// @return valid true if the swap order is still valid.
     function isValidSwap(
-        SwapOrder calldata order,
+        SwapTokenOrder calldata order,
         bytes calldata makerSignature
     ) external view returns (bool valid) {
         valid =
@@ -251,7 +354,7 @@ contract DexWallet is SimpleAccount {
         // Save VerifySwap
         bytes32 verifyHash = _hashVerifier(maker, order.id);
         if (order.exchangeType == ExchangeType.BUY) {
-            tokenVerifiers[verifyHash] = TokensVerify({
+            tokensVerifiers[verifyHash] = TokensVerify({
                 maker: maker,
                 takerTokenOut: order.baseToken,
                 takerTokenIn: order.quoteToken,
@@ -261,7 +364,7 @@ contract DexWallet is SimpleAccount {
                 )
             });
         } else {
-            tokenVerifiers[verifyHash] = TokensVerify({
+            tokensVerifiers[verifyHash] = TokensVerify({
                 maker: maker,
                 takerTokenOut: order.quoteToken,
                 takerTokenIn: order.baseToken,
@@ -275,7 +378,7 @@ contract DexWallet is SimpleAccount {
         IDexWallet(maker).makeTokensExchange(order, baseAmount, makerSignature);
     }
 
-    /// @notice Exchanges a variable amount of tokens at a fixed rate.
+    /// @notice Exchanges a variable amount of base tokens at a fixed rate to quote tokens.
     /// @param order The order to execute of type ExchangeOrder.
     /// @param baseAmount The amount of base tokens that are to be bought or sold.
     function makeTokensExchange(
@@ -337,8 +440,84 @@ contract DexWallet is SimpleAccount {
         }
     }
 
-    function takeNFTsExchange(
-        NFTOrder calldata order,
+    function takeTokenExchange(
+        ExchangeEthOrder calldata order,
+        uint256 tokenAmount,
+        address maker,
+        bytes calldata makerSignature
+    ) external onlyOwner {
+        uint256 etherAmount = (tokenAmount * order.exchangeRate) / 1e18;
+        // Save VerifySwap
+        bytes32 verifyHash = _hashVerifier(maker, order.id);
+        if (order.exchangeType == ExchangeType.BUY) {
+            tokensVerifiers[verifyHash] = TokensVerify({
+                maker: maker,
+                takerTokenIn: 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE,
+                takerTokenOut: order.token,
+                takerAmountOut: SafeCast.toUint120(tokenAmount),
+                takerBalanceIn: SafeCast.toUint128(address(this).balance + etherAmount)
+            });
+        } else {
+            tokensVerifiers[verifyHash] = TokensVerify({
+                maker: maker,
+                takerTokenIn: order.token,
+                takerTokenOut: 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE,
+                takerAmountOut: SafeCast.toUint120(etherAmount),
+                takerBalanceIn: SafeCast.toUint128(
+                    IERC20(order.token).balanceOf(address(this)) + tokenAmount
+                )
+            });
+        }
+
+        IDexWallet(maker).makeTokenExchange(order, tokenAmount, makerSignature);
+    }
+
+    /// @notice Exchanges a variable amount of base tokens at a fixed rate to ether.
+    /// @param order The order to execute of type ExchangeOrder.
+    /// @param tokenAmount The amount of tokens that are to be bought or sold.
+    /// @param makerSignature The signature of the order.
+    function makeTokenExchange(
+        ExchangeEthOrder calldata order,
+        uint256 tokenAmount,
+        bytes calldata makerSignature
+    ) external {
+        require(owner == hashExchangeEthOrder(order).recover(makerSignature), "invalid signature");
+        require(block.timestamp < order.expiry, "swap expired");
+        require(order.chainId == block.chainid, "invalid chain");
+        _checkOrderId(order.id, false);
+
+        uint256 etherAmount = (tokenAmount * order.exchangeRate) / 1e18;
+        if (order.exchangeType == ExchangeType.BUY) {
+            // Transfer out the ether
+            payable(msg.sender).transfer(etherAmount);
+        } else {
+            // Transfer out the base token
+            IERC20(order.token).safeTransfer(msg.sender, tokenAmount);
+        }
+
+        uint256 balance;
+        if (order.exchangeType == ExchangeType.BUY) {
+            balance = IERC20(order.token).balanceOf(address(this));
+        } else {
+            balance = address(this).balance;
+        }
+
+        // Call taker to verify the exchange and transfer their tokens or ether
+        IDexWallet(msg.sender).verifyTokens(order.id);
+
+        // Verify the taker transferred their tokens
+        if (order.exchangeType == ExchangeType.BUY) {
+            require(
+                IERC20(order.token).balanceOf(address(this)) >= balance + tokenAmount,
+                "taker did not transfer tokens"
+            );
+        } else {
+            require(address(this).balance >= balance + etherAmount, "taker did not transfer ether");
+        }
+    }
+
+    function takeNFTUnitTokenExchange(
+        NFTUnitTokenOrder calldata order,
         uint256[] calldata exchangeIds,
         address maker,
         bytes calldata makerSignature
@@ -370,7 +549,7 @@ contract DexWallet is SimpleAccount {
             });
         }
 
-        IDexWallet(maker).makeNFTsExchange(order, exchangeIds, makerSignature);
+        IDexWallet(maker).makeNFTUnitTokenExchange(order, exchangeIds, makerSignature);
     }
 
     /// @notice Exchanges a set of NFTs at a fixed price.
@@ -378,12 +557,12 @@ contract DexWallet is SimpleAccount {
     /// If its a buy order and the wallet transfer the NFT, the order can be reexecuted if not expired or cancelled.
     /// @param order The order to execute of type NFTOrder.
     /// @param exchangeIds The token IDs the market taker wants to exchange. This can be a subset of what's in the order.
-    function makeNFTsExchange(
-        NFTOrder calldata order,
+    function makeNFTUnitTokenExchange(
+        NFTUnitTokenOrder calldata order,
         uint256[] calldata exchangeIds,
         bytes calldata makerSignature
     ) external {
-        require(owner == hashNFTOrder(order).recover(makerSignature), "invalid signature");
+        require(owner == hashNFTUnitTokenOrder(order).recover(makerSignature), "invalid signature");
         require(block.timestamp < order.expiry, "swap expired");
         require(order.chainId == block.chainid, "invalid chain");
         _checkOrderId(order.id, false);
@@ -409,10 +588,9 @@ contract DexWallet is SimpleAccount {
 
                     // Transfer out the NFT
                     IERC721(order.nft).transferFrom(address(this), msg.sender, exchangeIds[i]);
-
-                    settleBalance = IERC20(order.settleToken).balanceOf(address(this));
                 }
             }
+            settleBalance = IERC20(order.settleToken).balanceOf(address(this));
         }
 
         // Call taker to verify the the maker transferred to the taker and
@@ -434,6 +612,60 @@ contract DexWallet is SimpleAccount {
             require(
                 IERC20(order.settleToken).balanceOf(address(this)) >=
                     settleBalance + (nftLen * order.price),
+                "taker did not transfer"
+            );
+        }
+    }
+
+    /// @notice Exchanges all NFTs at a fixed amount.
+    /// @param order The order to execute of type NFTOrder.
+    function makeNFTBundleTokenExchange(
+        NFTBundleTokenOrder calldata order,
+        bytes calldata makerSignature
+    ) external {
+        require(
+            owner == hashNFTBundleTokenOrder(order).recover(makerSignature),
+            "invalid signature"
+        );
+        require(block.timestamp < order.expiry, "swap expired");
+        require(order.chainId == block.chainid, "invalid chain");
+        _checkOrderId(order.id, false);
+
+        uint256 nftLen = order.tokenIds.length;
+        uint256 settleBalance;
+
+        if (order.exchangeType == ExchangeType.BUY) {
+            // Transfer out the settlement tokens
+            IERC20(order.settleToken).safeTransfer(msg.sender, order.settleAmount);
+        } else {
+            unchecked {
+                for (uint256 i; i < nftLen; ++i) {
+                    // Transfer out the NFT
+                    IERC721(order.nft).transferFrom(address(this), msg.sender, order.tokenIds[i]);
+                }
+            }
+            settleBalance = IERC20(order.settleToken).balanceOf(address(this));
+        }
+
+        // Call taker to verify the the maker transferred to the taker and
+        // the taker to transfer to the maker.
+        IDexWallet(msg.sender).verifyNFTs(order.id);
+
+        if (order.exchangeType == ExchangeType.BUY) {
+            // Verify the taker transferred the NFTs
+            unchecked {
+                for (uint256 i; i < nftLen; ++i) {
+                    require(
+                        IERC721(order.nft).ownerOf(order.tokenIds[i]) == address(this),
+                        "taker did not transfer"
+                    );
+                }
+            }
+        } else {
+            // Verify the taker transferred the settlement tokens
+            require(
+                IERC20(order.settleToken).balanceOf(address(this)) >=
+                    settleBalance + order.settleAmount,
                 "taker did not transfer"
             );
         }
@@ -500,7 +732,7 @@ contract DexWallet is SimpleAccount {
     }
 
     function availableNFTs(
-        NFTOrder calldata order
+        NFTUnitTokenOrder calldata order
     ) external view returns (uint256[] memory tokenIds) {
         if (
             block.timestamp >= order.expiry || order.chainId == block.chainid || orderUsed(order.id)
@@ -581,7 +813,7 @@ contract DexWallet is SimpleAccount {
     }
 
     // TODO move to EIP-712 hashes so the signer can see what they are signing rather than just a hash
-    function hashSwapOrder(SwapOrder calldata order) public pure returns (bytes32 hash) {
+    function hashSwapOrder(SwapTokenOrder calldata order) public pure returns (bytes32 hash) {
         hash = keccak256(
             abi.encodePacked(
                 order.makerTokenIn,
@@ -610,13 +842,63 @@ contract DexWallet is SimpleAccount {
         ).toEthSignedMessageHash();
     }
 
-    function hashNFTOrder(NFTOrder calldata order) public pure returns (bytes32 hash) {
+    function hashExchangeEthOrder(
+        ExchangeEthOrder calldata order
+    ) public pure returns (bytes32 hash) {
+        hash = keccak256(
+            abi.encodePacked(
+                order.exchangeType,
+                order.token,
+                order.exchangeRate,
+                order.id,
+                order.expiry,
+                order.chainId
+            )
+        ).toEthSignedMessageHash();
+    }
+
+    function hashNFTUnitTokenOrder(
+        NFTUnitTokenOrder calldata order
+    ) public pure returns (bytes32 hash) {
         hash = keccak256(
             abi.encodePacked(
                 order.exchangeType,
                 order.nft,
                 order.tokenIds,
                 order.settleToken,
+                order.price,
+                order.id,
+                order.expiry,
+                order.chainId
+            )
+        ).toEthSignedMessageHash();
+    }
+
+    function hashNFTBundleTokenOrder(
+        NFTBundleTokenOrder calldata order
+    ) public pure returns (bytes32 hash) {
+        hash = keccak256(
+            abi.encodePacked(
+                order.exchangeType,
+                order.nft,
+                order.tokenIds,
+                order.settleToken,
+                order.settleAmount,
+                order.id,
+                order.expiry,
+                order.chainId
+            )
+        ).toEthSignedMessageHash();
+    }
+
+    function hashNFTUnitETHOrder(
+        NFTUnitETHOrder calldata order
+    ) public pure returns (bytes32 hash) {
+        hash = keccak256(
+            abi.encodePacked(
+                order.exchangeType,
+                order.nft,
+                order.tokenIds,
                 order.price,
                 order.id,
                 order.expiry,
