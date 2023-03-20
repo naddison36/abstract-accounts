@@ -88,7 +88,7 @@ activate ta
 note left : get before in balance
 return maker wallet balance
 
-mw -> tw : verifySwap(order id)
+mw -> tw : verifyTokens(order id)
 activate tw
 note right : callback to taker wallet
 

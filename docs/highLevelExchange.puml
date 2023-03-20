@@ -1,0 +1,62 @@
+@startuml
+
+title "Trusted Wallet Swap"
+
+actor "Market\nMaker" as mm
+actor "Market\nTaker" as mt
+' actor "Bundler" as b
+' participant "Entry\nPoint" as ep
+
+box "Blockchain" #LightCyan
+participant "Traker\nWallet" as tw
+participant "Maker\nWallet" as mw
+participant "Maker's\nToken In" as ta
+participant "Maker's\nToken Out" as tb
+end box
+
+
+mm --> mt : order, maker sig
+note left : publish order\n& signature
+
+mt -> tw : takeSwap(\norder, maker, maker sig)
+activate tw
+
+tw -> mw : makeSwap(\norder, maker sig)
+activate mw
+
+mw -> mw : verify(order, maker sig)
+note left : verify order and signature
+
+mw -> tb : transfer(\ntaker wallet, amount out)
+activate tb
+note left
+transfer out tokens
+from maker wallet
+to taker wallet
+end note
+return
+
+mw -> tw : verifyTokens(order id)
+activate tw
+
+tw -> tw : verify(order id)
+note left : verify maker's transfer
+
+tw -> ta : transfer(\nmaker wallet, amount in)
+activate ta
+note left
+transfer in tokens
+from taker wallet
+to maker wallet
+end note
+return
+
+return
+
+mw -> mw : verify(order)
+note left : verify taker's transfer
+
+return
+return
+
+@enduml

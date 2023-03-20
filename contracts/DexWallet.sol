@@ -8,16 +8,36 @@ import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import { SafeCast } from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
 import { IEntryPoint, SimpleAccount } from "./account-abstraction/samples/SimpleAccount.sol";
+import { IDexWallet } from "./IDexWallet.sol";
 
+/**
+ * @notice is from the perspective of the market maker.
+ * @param makerTokenIn The token being transferred from the market taker to the marker maker's wallet.
+ * @param makerAmountIn The amount of tokens being transferred from the market taker to the market maker's wallet.
+ * @param makerTokenOut The token being transferred from the market maker's wallet to the market taker.
+ * @param makerAmountOut The amount of tokens being transferred from the market maker's wallet to the market maker.
+ * @param id Identify the order so it can be cancelled and not replayed.
+ * @param expiry Expiry in seconds since epoch.
+ * @param chainId Chain ID of the network the order is to be executed on.
+ */
 struct SwapOrder {
-    address makerTokenIn; // The token being transferred from the market maker to the wallet
+    address makerTokenIn;
     uint256 makerAmountIn;
-    address makerTokenOut; // The token being transferred from the wallet to the market maker.
+    address makerTokenOut;
     uint256 makerAmountOut;
-    uint256 id; // Identify the order so it can be cancelled and not replayed
-    uint256 expiry; // Expiry in seconds since epoch
-    uint256 chainId; // Chain ID of the network the order is to be executed on
+    uint256 id;
+    uint256 expiry;
+    uint256 chainId;
 }
+/**
+ * @notice is from the perspective of the market taker.
+ * @param maker The address of the market maker's wallet.
+ * @param takerTokenIn The token being transferred from the market taker to the marker taker's wallet.
+ * @param takerTokenOut The token being transferred from the market taker's wallet to the market maker.
+ * @param takerAmountOut The amount of tokens being transferred from the market taker's wallet to the market maker.
+ * @param takerBalanceIn The expected balance of the `takerTokenIn` tokens in the market taker's wallet after the swap.
+ * takerBalanceIn = before balance of SwapOrder's makerTokenOut + SwapOrder's makerAmountOut
+ */
 struct TokensVerify {
     address maker;
     address takerTokenIn;
@@ -30,27 +50,61 @@ enum ExchangeType {
     BUY,
     SELL
 }
+/**
+ * @notice is from the perspective of the market maker.
+ * @param exchangeType Buy or Sell of the base token relative to the market maker's wallet.
+ * @param baseToken The first token in the trading pair. eg WETH in WETH/USDC
+ * @param quoteToken The second token in the trading pair. eg USDC in WETH/USDC
+ * @param exchangeRate Rate of exchange from base token to quote token scaled by 1e18. eg exchange rate = quote * 1e18 / base
+ * @param id Identify the order so it can be cancelled and not replayed
+ * @param expiry Expiry in seconds since epoch
+ * @param chainId Chain ID of the network the order is to be executed on
+ */
 struct ExchangeOrder {
-    ExchangeType exchangeType; // Buy or Sell of the base token relative to the wallet, which is the market maker.
-    address baseToken; // The first token in the trading pair. eg WETH in WETH/USDC
-    address quoteToken; // The second token in the trading pair. eg USDC in WETH/USDC
-    uint256 exchangeRate; // Rate of exchange from base token to quote token scaled by 1e18. eg exchange rate = quote * 1e18 / base
-    uint256 id; // Identify the order so it can be cancelled and not replayed
-    uint256 expiry; // Expiry in seconds since epoch
-    uint256 chainId; // Chain ID of the network the order is to be executed on
+    ExchangeType exchangeType;
+    address baseToken;
+    address quoteToken;
+    uint256 exchangeRate;
+    uint256 id;
+    uint256 expiry;
+    uint256 chainId;
 }
 
+/**
+ * @notice is from the perspective of the market maker.
+ * @param exchangeType Buy or Sell of the NFTs relative to the market maker's wallet.
+ * @param nft The address of the NFT contract.
+ * @param tokenIds The NFT token IDs that are being bought or sold.
+ * @param settleToken The token the NFTs are being bought or sold for. eg WETH or USDC
+ * @param price Unit price of each NFT. So if selling 3 NFTs for 100 USDC each,
+ * the price would be 100e6 as USDC has 6 decimal places.
+ * @param id Identify the order so it can be cancelled and not replayed
+ * @param expiry Expiry in seconds since epoch
+ * @param chainId Chain ID of the network the order is to be executed on
+ */
 struct NFTOrder {
-    ExchangeType exchangeType; // Buy or Sell of the NFTs relative to the wallet, which is the market maker.
-    address nft; // The NFT contract address
-    uint256[] tokenIds; // The NFT token ids that are being bought or sold.
-    address settleToken; // The token the NFTs are being bought or sold for. eg WETH or USDC
-    uint256 price; // Unit price of each NFT.
-    uint256 id; // Identify the order so it can be cancelled and not replayed
-    uint256 expiry; // Expiry in seconds since epoch
-    uint256 chainId; // Chain ID of the network the order is to be executed on
+    ExchangeType exchangeType;
+    address nft;
+    uint256[] tokenIds;
+    address settleToken;
+    uint256 price;
+    uint256 id;
+    uint256 expiry;
+    uint256 chainId;
 }
 
+/**
+ * @param maker The address of the market maker's wallet.
+ * @param nft The address of the NFT contract.
+ * @param settleToken The token the NFTs are being bought or sold for. eg WETH or USDC
+ * @param tokenIds The NFT token IDs that are being bought or sold.
+ * @param exchangeType Buy or Sell of the NFTs relative to the market maker's wallet.
+ * @param price Unit price of each NFT. So if selling 3 NFTs for 100 USDC each,
+ * the price would be 100e6 as USDC has 6 decimal places.
+ * @param settleAmtBal For Buy orders, `settleAmtBal` is the amount of settlement tokens to be transferred to the market maker's wallet.
+ * For Sell orders, `settleAmtBal` is the maker taker's expected balance of settlement tokens after the exchange which is
+ * `settleAmtBal` = before balance of `settleToken` + (length of `tokenIds` * `price`)
+ */
 struct NftVerify {
     address maker;
     address nft;
@@ -62,26 +116,10 @@ struct NftVerify {
     uint128 settleAmtBal;
 }
 
-interface IDex {
-    function makeSwap(SwapOrder calldata order, bytes calldata makerSignature) external;
-
-    function makeTokensExchange(
-        ExchangeOrder calldata order,
-        uint256 baseAmount,
-        bytes calldata signature
-    ) external;
-
-    function makeNFTsExchange(
-        NFTOrder calldata order,
-        uint256[] calldata exchangeIds,
-        bytes calldata makerSignature
-    ) external;
-
-    function verifyTokens(uint256 orderId) external;
-
-    function verifyNFTs(uint256 orderId) external;
-}
-
+/**
+ * @notice A ERC-4337 Abstract Account that can swap tokens and NFTs.
+ * @author Nick Addison
+ */
 contract DexWallet is SimpleAccount {
     using ECDSA for bytes32;
     using SafeERC20 for IERC20;
@@ -91,18 +129,30 @@ contract DexWallet is SimpleAccount {
     /// @notice Any order identifiers equal to or greater than this value are invalid.
     /// @dev There are 256 bits in a uint256, so we can store 256 identifier flags in a single storage slot.
     uint256 public constant MAX_ORDER_ID = 256 * USED_ID_ARRAY_SIZE;
-    // This caps the number of orders to MAX_ORDER_ID but it's the most efficient way of storing bools.
-    uint256[USED_ID_ARRAY_SIZE] usedOrderIds;
+    /// @notice Flags if an order has already been executed or cancelled.
+    /// @dev The number of orders to capped to MAX_ORDER_ID but it's the most efficient way of storing bools.
+    /// Every bit is mapped to an order number. So order 0 is the first bit in the first array position.
+    /// Order 31 is the last bit in the first array position.
+    /// Order 32 is the first bit in the second array position.
+    /// Order 34 is the third bit in the second array position.
+    uint256[USED_ID_ARRAY_SIZE] public usedOrderIds;
 
+    /// @notice used by the market taker to store token swap data between calling the market maket's wallet and
+    // the maker maker's wallet calling the this contact back again.
     mapping(bytes32 => TokensVerify) public tokenVerifiers;
+    /// @notice used by the market taker to store NFT swap data between calling the market maket's wallet and
+    // the maker maker's wallet calling the this contact back again.
     mapping(bytes32 => NftVerify) public nftVerifiers;
 
+    /// @notice Emitted when an order has been cancelled or a token swap has been executed.
+    /// This is not emitted for token or NFT exchanges.
     event OrderUsed(uint256 id);
 
     constructor(IEntryPoint anEntryPoint) SimpleAccount(anEntryPoint) {}
 
-    function initialize(address anOwner) external override initializer {
-        _initialize(anOwner);
+    /// @param aaOwner The address of the wallet owner.
+    function initialize(address aaOwner) external override initializer {
+        _initialize(aaOwner);
     }
 
     function takeSwap(
@@ -122,7 +172,7 @@ contract DexWallet is SimpleAccount {
             )
         });
 
-        IDex(maker).makeSwap(order, makerSignature);
+        IDexWallet(maker).makeSwap(order, makerSignature);
     }
 
     /// @notice Swaps a whole amount of tokens.
@@ -138,7 +188,7 @@ contract DexWallet is SimpleAccount {
         uint256 tokenInBalance = IERC20(order.makerTokenIn).balanceOf(address(this));
 
         // Call taker to verify the swap and transfer their tokens
-        IDex(msg.sender).verifyTokens(order.id);
+        IDexWallet(msg.sender).verifyTokens(order.id);
 
         // Verify the taker transferred their tokens
         require(
@@ -222,7 +272,7 @@ contract DexWallet is SimpleAccount {
             });
         }
 
-        IDex(maker).makeTokensExchange(order, baseAmount, makerSignature);
+        IDexWallet(maker).makeTokensExchange(order, baseAmount, makerSignature);
     }
 
     /// @notice Exchanges a variable amount of tokens at a fixed rate.
@@ -258,7 +308,7 @@ contract DexWallet is SimpleAccount {
         uint256 tokenInBalance = IERC20(tokenIn).balanceOf(address(this));
 
         // Call taker to verify the swap and transfer their tokens
-        IDex(msg.sender).verifyTokens(order.id);
+        IDexWallet(msg.sender).verifyTokens(order.id);
 
         // Verify the taker transferred their tokens
         require(
@@ -320,7 +370,7 @@ contract DexWallet is SimpleAccount {
             });
         }
 
-        IDex(maker).makeNFTsExchange(order, exchangeIds, makerSignature);
+        IDexWallet(maker).makeNFTsExchange(order, exchangeIds, makerSignature);
     }
 
     /// @notice Exchanges a set of NFTs at a fixed price.
@@ -367,7 +417,7 @@ contract DexWallet is SimpleAccount {
 
         // Call taker to verify the the maker transferred to the taker and
         // the taker to transfer to the maker.
-        IDex(msg.sender).verifyNFTs(order.id);
+        IDexWallet(msg.sender).verifyNFTs(order.id);
 
         if (order.exchangeType == ExchangeType.BUY) {
             // Verify the taker transferred the NFTs
