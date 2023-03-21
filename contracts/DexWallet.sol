@@ -661,7 +661,8 @@ contract DexWallet is SimpleAccount {
 
     function _transfer(address token, address recipient, uint256 amount) internal {
         if (token == ETH_TOKEN) {
-            payable(recipient).transfer(amount);
+            (bool success,) = recipient.call{value : amount}("");
+            require(success, "failed ether transfer");
         } else {
             IERC20(token).safeTransfer(recipient, amount);
         }
