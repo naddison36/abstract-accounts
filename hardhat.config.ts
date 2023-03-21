@@ -26,7 +26,7 @@ const config: HardhatUserConfig = {
     },
     networks: {
         hardhat: {
-            allowUnlimitedContractSize: true,
+            allowUnlimitedContractSize: false,
             initialBaseFeePerGas: 0,
         },
         local: { url: "http://localhost:8545" },

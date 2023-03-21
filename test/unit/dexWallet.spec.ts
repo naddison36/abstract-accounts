@@ -14,7 +14,7 @@ import { account, Chain, getTimestamp, logger, logTxDetails, signExchangeOrder, 
 
 import type { Account, Token } from "../../src/types"
 import type { DexWallet, DexWalletFactory, EntryPoint, IERC20, MockNFT } from "../../src/types/typechain"
-import type { ExchangeOrderStruct, NFTUnitTokenOrderStruct, SwapTokenOrderStruct } from "../../src/types/typechain/contracts/DexWallet"
+import type { ExchangeOrderStruct, NFTUnitOrderStruct, SwapOrderStruct } from "../../src/types/typechain/contracts/DexWallet"
 
 const log = logger("test:DexWallet")
 
@@ -98,7 +98,7 @@ describe("DexWallet Unit Tests", () => {
             await tokenB.transfer(makerWallet.address, parseUnits("1002", TokenB.decimals))
 
             // Maker signed the order
-            const order: SwapTokenOrderStruct = {
+            const order: SwapOrderStruct = {
                 makerTokenIn: tokenA.address,
                 makerAmountIn: parseUnits("11", TokenA.decimals),
                 makerTokenOut: tokenB.address,
@@ -272,7 +272,7 @@ describe("DexWallet Unit Tests", () => {
             expect(await mockNFT.balanceOf(takerWallet.address), "taker's wallet NFTs after").to.eq(3)
 
             // Maker signs NFT exchange
-            const order: NFTUnitTokenOrderStruct = {
+            const order: NFTUnitOrderStruct = {
                 exchangeType: ExchangeType.SELL,
                 nft: mockNFT.address,
                 tokenIds: [1],
@@ -284,7 +284,7 @@ describe("DexWallet Unit Tests", () => {
             }
             const makerSig = await signNFTOrder(order, maker.signer)
 
-            const tx = await takerWallet.takeNFTUnitTokenExchange(order, [1], makerWallet.address, makerSig)
+            const tx = await takerWallet.takeNFTUnitExchange(order, [1], makerWallet.address, makerSig)
             await logTxDetails(tx, "take sell NFT exchange")
 
             expect(await mockNFT.ownerOf(1), "taker owns NFT 1 after").to.eq(takerWallet.address)
@@ -303,7 +303,7 @@ describe("DexWallet Unit Tests", () => {
             expect(await mockNFT.balanceOf(takerWallet.address), "taker's wallet NFTs after").to.eq(3)
 
             // Maker signs NFT exchange
-            const order: NFTUnitTokenOrderStruct = {
+            const order: NFTUnitOrderStruct = {
                 exchangeType: ExchangeType.SELL,
                 nft: mockNFT.address,
                 tokenIds: [0, 1, 2],
@@ -315,7 +315,7 @@ describe("DexWallet Unit Tests", () => {
             }
             const makerSig = await signNFTOrder(order, maker.signer)
 
-            const tx = await takerWallet.takeNFTUnitTokenExchange(order, [0, 1, 2], makerWallet.address, makerSig)
+            const tx = await takerWallet.takeNFTUnitExchange(order, [0, 1, 2], makerWallet.address, makerSig)
             await logTxDetails(tx, "take sell 3 NFTs exchange")
 
             expect(await mockNFT.ownerOf(0), "taker owns NFT 0 after").to.eq(takerWallet.address)
@@ -339,7 +339,7 @@ describe("DexWallet Unit Tests", () => {
             log(`mockNFT: ${mockNFT.address}`)
 
             // Maker signs NFT exchange
-            const order: NFTUnitTokenOrderStruct = {
+            const order: NFTUnitOrderStruct = {
                 exchangeType: ExchangeType.BUY,
                 nft: mockNFT.address,
                 tokenIds: [3, 4, 5],
@@ -351,7 +351,7 @@ describe("DexWallet Unit Tests", () => {
             }
             const makerSig = await signNFTOrder(order, maker.signer)
 
-            const tx = await takerWallet.takeNFTUnitTokenExchange(order, [3, 4], makerWallet.address, makerSig)
+            const tx = await takerWallet.takeNFTUnitExchange(order, [3, 4], makerWallet.address, makerSig)
             await logTxDetails(tx, "take buy 2 NFTs exchange")
 
             expect(await mockNFT.ownerOf(3), "maker owns NFT 1 after").to.eq(makerWallet.address)

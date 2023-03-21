@@ -4,7 +4,7 @@ pragma solidity ^0.8.19;
 import "./DexWallet.sol";
 
 interface IDexWallet {
-    function makeTokenSwap(SwapTokenOrder calldata order, bytes calldata makerSignature) external;
+    function makeTokenSwap(SwapOrder calldata order, bytes calldata makerSignature) external;
 
     function makeTokensExchange(
         ExchangeOrder calldata order,
@@ -12,32 +12,14 @@ interface IDexWallet {
         bytes calldata signature
     ) external;
 
-    function makeTokenExchange(
-        ExchangeEthOrder calldata order,
-        uint256 tokenAmount,
-        bytes calldata signature
-    ) external;
-
-    function makeNFTUnitTokenExchange(
-        NFTUnitTokenOrder calldata order,
+    function makeNFTUnitExchange(
+        NFTUnitOrder calldata order,
         uint256[] calldata exchangeIds,
         bytes calldata makerSignature
     ) external;
 
-    function makeNFTBundleTokenExchange(
-        NFTBundleTokenOrder calldata order,
-        uint256[] calldata exchangeIds,
-        bytes calldata makerSignature
-    ) external;
-
-    function makeNFTUnitETHExchange(
-        NFTUnitETHOrder calldata order,
-        uint256[] calldata exchangeIds,
-        bytes calldata makerSignature
-    ) external;
-
-    function makeNFTBundleETHExchange(
-        NFTBundleETHOrder calldata order,
+    function makeNFTBundleExchange(
+        NFTBundleOrder calldata order,
         uint256[] calldata exchangeIds,
         bytes calldata makerSignature
     ) external;
