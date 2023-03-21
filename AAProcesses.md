@@ -6,4 +6,4 @@
 
 This is a simple version as it doesn't use a signature aggregator or paymaster.
 
-![handleOps with no paymaster or aggregate signer](./docs/handleOpsNoPaymaster.png)
+![handleOps with no paymaster or aggregate signer](./docs/handleOpsNoPayMaster.png)
