@@ -1,0 +1,135 @@
+@startuml
+
+title "Bundler executes User Operations with\nNo Paymaster or Signature Aggregator"
+
+
+actor "Wallet\nSigner" as s
+actor "Bundler" as b <<beneficiary>>
+participant "Entry\nPoint" as ep
+participant "Abstract\nAccount" as aa <<sender>>
+participant "Target\nContract" as t
+
+'  Using Abstract Account
+' mt --> mt : order, sig 1\n> User Op
+' note left : make User\nOperation
+' mt --> mt : User Op > sig 2
+' note left : sign User\nOperation
+
+' mt --> b : User Operation, sig 2
+' ' note left : sign swap\noperation
+
+s --> s : hash(User Op)
+note left
+- sender
+- nonce
+- initCode
+- callData
+- callGasLimit
+- verificationGasLimit
+- preVerificationGas
+- maxFeePerGas
+- maxPriorityFeePerGas
+- paymasterAndData
+end note
+s --> s : sign(hash)
+' note left : eg Elliptic Curve Digital Signature Algorithm (ECDSA)
+note left : eg ECDSA
+s --> b : signed user op
+note left : publish to bundlers
+
+' Start of handleOps transaction on Entry Point
+b -> ep : handleOps([user op], beneficiary)
+activate ep
+note left : execute bundled user operations
+
+loop User Operation
+
+' calc required ether prefunding
+ep -> ep : requiredPrefund(User Op)
+note left
+callGasLimit + 
+verificationGasLimit +
+preVerificationGas
+end note
+
+ep -> ep : balanceOf(sender)
+note left : sender's ether balance\nin Entry Point
+ep -> ep : missing ether =\nrequiredPrefund - balance
+note left : ether the account must\nsend during validation
+
+ep -> aa : validateUserOp(\nuser op, op hash, missing ether)
+' note left : validate with abstract account
+activate aa
+aa -> aa : recover signer(\nop hash, signature)
+note left : eg ECDSA
+aa -> aa : validate(\nsigner, sender)
+note left : validate signer is sender
+
+aa -> aa : validate(nonce)
+note left : validate and update nonce
+
+aa -> ep : (missing ether)
+activate ep
+note left : transfer missing ether\nfrom abstract account\nto Entry Point
+ep -> ep : depositTo(sender, missing ether)
+note left : increment sender's\nether balance
+return
+
+return sigAuthorizer, valid until, valid after
+
+' check enough ether was pre funded from abstract account
+ep -> ep : balanceOf(sender)
+note left : sender's ether balance
+ep -> ep : validate(\nsender balance, requiredPrefund)
+note left : check sender has enough\nether after validation
+
+ep -> ep : validate(\ngasUsed, verificationGasLimit)
+note left : check gas used during validation\n<= verificationGasLimit
+
+ep -> ep : validate(sigAuthorizer)
+note left : 0 success, 1 failure or\naddress of "authorizer" contract
+
+ep -> ep : validate(valid before, valid until)
+note left : check against block timestamp if not 0
+
+end loop
+
+
+loop User Operation
+
+ep -> ep : validate(\ncallGasLimit, verificationGasLimit)
+note left : check gas left >=\ncallGasLimit +\nverificationGasLimit +\n5000
+
+ep -> aa : call(sender, callData, callGasLimit)
+note left : callData = execute(target, value, targetCallData)
+activate aa
+
+aa -> aa : validate(msg sender)
+note left :msg sender is Entry Point\nor Wallet Owner
+
+aa -> t : call(target, value, targetCallData)
+activate t
+note left : target and targetCallData\nfrom User Op callData
+return success, result
+
+aa -> aa : validate(success, result)
+note left : Revert if !success with result
+
+return success
+
+ep -> ep : validate(success) 
+note left : If !success,\nemit reason with\nuser op hash, sender & nonce
+
+ep -> ep : refund(sender, unused gas)
+note left : increment sender's deposit\nfor unused gas
+
+end loop
+
+ep -> b : (actualGasCosts)
+note left : refund beneficiary in\nether for gas costs
+activate b
+return
+
+return
+
+@enduml

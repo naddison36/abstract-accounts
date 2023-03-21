@@ -13,6 +13,7 @@
 -   [Stackup](https://www.stackup.sh/) Infrastructure for Smart Contract Wallets [ERC-4337 Overview](https://docs.stackup.sh/docs/introduction/erc-4337-overview)
 -   [Account Abstraction Resources](https://github.com/PaymagicXYZ/awesome-account-abstraction)
 -   Diagrams of the [Account Abstraction Contracts](https://github.com/naddison36/sol2uml/tree/master/examples/accountAbstraction#account-abstraction-contracts)
+-   [Abstract Account Process Diagrams](./AAProcesses.md)
 
 ## Installation
 

@@ -14,6 +14,7 @@ npm install -g node-plantuml
 cd docs
 npx puml generate dexSwap.puml -o dexSwap.png
 npx puml generate highLevelExchange.puml -o highLevelExchange.png
+npx puml generate handleOpsNoPayMaster.puml -o handleOpsNoPayMaster.png
 ```
 
 ### VS Code extension
