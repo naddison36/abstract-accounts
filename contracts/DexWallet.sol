@@ -156,7 +156,7 @@ contract DexWallet is SimpleAccount {
     uint256 internal constant USED_ID_ARRAY_SIZE = 4096;
     /// @notice Any order identifiers equal to or greater than this value are invalid.
     /// @dev There are 256 bits in a uint256, so we can store 256 identifier flags in a single storage slot.
-    uint256 public constant MAX_ORDER_ID = 256 * USED_ID_ARRAY_SIZE;
+    uint256 public constant MAX_ORDER_ID = 256 * USED_ID_ARRAY_SIZE - 1;
     /// @notice Flags if an order has already been executed or cancelled.
     /// @dev The number of orders to capped to MAX_ORDER_ID but it's the most efficient way of storing bools.
     /// Every bit is mapped to an order number. So order 0 is the first bit in the first array position.
@@ -363,7 +363,7 @@ contract DexWallet is SimpleAccount {
         uint256[] calldata exchangeIds,
         address maker,
         bytes calldata makerSignature
-    ) external {
+    ) external onlyOwner {
         // Save NFT Exchange details for later verification
         bytes32 verifyHash = _hashVerifier(maker, order.id);
         if (order.exchangeType == ExchangeType.BUY) {
@@ -442,24 +442,16 @@ contract DexWallet is SimpleAccount {
                 for (uint256 i; i < nftLen; ++i) {
                     require(
                         IERC721(order.nft).ownerOf(exchangeIds[i]) == address(this),
-                        "taker did not transfer"
+                        "taker did not transfer NFT"
                     );
                 }
             }
         } else {
             // Verify the taker transferred the settlement ether or tokens
-            if (order.settleToken == ETH_TOKEN) {
-                require(
-                    address(this).balance >= settleBalance + (nftLen * order.price),
-                    "taker did not transfer ether"
-                );
-            } else {
-                require(
-                    IERC20(order.settleToken).balanceOf(address(this)) >=
-                        settleBalance + (nftLen * order.price),
-                    "taker did not transfer tokens"
-                );
-            }
+            require(
+                _verifyTransfer(order.settleToken, settleBalance + (nftLen * order.price)),
+                "taker did not transfer"
+            );
         }
     }
 
@@ -552,7 +544,7 @@ contract DexWallet is SimpleAccount {
                 for (uint256 i; i < exchangeIdLen; ++i) {
                     require(
                         IERC721(verifyData.nft).ownerOf(verifyData.tokenIds[i]) == address(this),
-                        "maker did not transfer"
+                        "maker did not transfer NFT"
                     );
                 }
             }
@@ -631,7 +623,7 @@ contract DexWallet is SimpleAccount {
     /// @notice check if the order identifier has been used before or cancelled.
     /// If not, mark the id as being used.
     function _checkOrderId(uint256 id, bool update) internal {
-        require(id < MAX_ORDER_ID, "id too high");
+        require(id <= MAX_ORDER_ID, "id too high");
         uint256 arrayIndex = id / 256;
         uint256 slotIndex = id % 256;
 
@@ -648,7 +640,7 @@ contract DexWallet is SimpleAccount {
 
     /// @return used true if the order has already been used in a swap or was cancelled.
     function orderUsed(uint256 id) public view returns (bool used) {
-        require(id < MAX_ORDER_ID, "id too high");
+        require(id <= MAX_ORDER_ID, "id too high");
         uint256 arrayIndex = id / 256;
         uint256 slotIndex = id % 256;
 
@@ -661,7 +653,7 @@ contract DexWallet is SimpleAccount {
 
     function _transfer(address token, address recipient, uint256 amount) internal {
         if (token == ETH_TOKEN) {
-            (bool success,) = recipient.call{value : amount}("");
+            (bool success, ) = recipient.call{ value: amount }("");
             require(success, "failed ether transfer");
         } else {
             IERC20(token).safeTransfer(recipient, amount);

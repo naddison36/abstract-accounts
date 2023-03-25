@@ -33,6 +33,8 @@ const TokenB: Token = {
     chain: Chain.hardhat,
     address: "",
 }
+const tokenEther = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"
+const SCALE = parseUnits("1", 18)
 
 describe("DexWallet Unit Tests", () => {
     let deployer: Account
@@ -127,8 +129,7 @@ describe("DexWallet Unit Tests", () => {
             expect(await makerWallet.isValidSwap(order, makerSig), "maker order is invalid").to.equal(false, makerSig)
             expect(await takerWallet.isValidSwap(order, makerSig), "taker order is invalid").to.equal(false, makerSig)
         })
-
-        it("maker should buy tokens", async () => {
+        it("maker should buy tokens for other token", async () => {
             const expectedBaseAmount = parseUnits("11", TokenA.decimals)
             const expectedQuoteAmount = parseUnits("10", TokenB.decimals)
 
@@ -138,7 +139,7 @@ describe("DexWallet Unit Tests", () => {
             await tokenB.transfer(makerWallet.address, parseUnits("1002", TokenB.decimals))
 
             // exchange rate = quote * 1e18 / base
-            const exchangeRate = expectedQuoteAmount.mul(parseUnits("1", TokenA.decimals)).div(expectedBaseAmount)
+            const exchangeRate = expectedQuoteAmount.mul(SCALE).div(expectedBaseAmount)
             // Maker signed the order
             const order: ExchangeOrderStruct = {
                 exchangeType: ExchangeType.BUY,
@@ -161,7 +162,7 @@ describe("DexWallet Unit Tests", () => {
 
             const maxQuoteAmount = parseUnits("1002", TokenB.decimals)
             // base amount = quote amount * 1e18 / exchange rate
-            const maxBaseAmount = maxQuoteAmount.mul(parseUnits("1", TokenA.decimals)).div(exchangeRate)
+            const maxBaseAmount = maxQuoteAmount.mul(SCALE).div(exchangeRate)
             const { baseAmount: baseAmountBefore, quoteAmount: quoteAmountBefore } = await makerWallet.maxTokensExchange(order)
             expect(baseAmountBefore, "max base amount").to.equal(maxBaseAmount)
             expect(quoteAmountBefore, "max quote amount").to.equal(maxQuoteAmount)
@@ -174,23 +175,20 @@ describe("DexWallet Unit Tests", () => {
             expect(await makerWallet.orderUsed(1), "maker order 1 has not been cancelled").to.equal(false)
             expect(await takerWallet.orderUsed(1), "taker order 1 has not been cancelled").to.equal(false)
             const { baseAmount: baseAmountAfter, quoteAmount: quoteAmountAfter } = await makerWallet.maxTokensExchange(order)
-            console.log(`baseAmountBefore  : ${baseAmountBefore.toString()}`)
-            console.log(`baseAmountAfter   : ${baseAmountAfter.toString()}`)
-            console.log(`expectedBaseAmount: ${expectedBaseAmount}`)
             expect(baseAmountAfter, "max base amount").to.equal(baseAmountBefore.sub(expectedBaseAmount))
             expect(quoteAmountAfter.div(100), "max quote amount").to.equal(quoteAmountBefore.sub(expectedQuoteAmount).div(100))
         })
-        it("maker should sell tokens", async () => {
+        it("maker should sell tokens for other tokens", async () => {
             const expectedBaseAmount = parseUnits("112", TokenA.decimals)
             const expectedQuoteAmount = parseUnits("111", TokenB.decimals)
 
-            // Transfer some A tokens to taker's wallet
+            // Transfer some A tokens to maker's wallet
             await tokenA.transfer(makerWallet.address, expectedBaseAmount)
-            // Transfer some B tokens to maker's wallet
+            // Transfer some B tokens to taker's wallet
             await tokenB.transfer(takerWallet.address, expectedQuoteAmount)
 
             // exchange rate = quote * 1e18 / base
-            const exchangeRate = expectedQuoteAmount.mul(parseUnits("1", TokenA.decimals)).div(expectedBaseAmount)
+            const exchangeRate = expectedQuoteAmount.mul(SCALE).div(expectedBaseAmount)
             // Maker signed the order
             const order: ExchangeOrderStruct = {
                 exchangeType: ExchangeType.SELL,
@@ -204,7 +202,7 @@ describe("DexWallet Unit Tests", () => {
             log("order: ")
             log(order)
 
-            // // Sign swap order
+            // Sign swap order
             const makerSig = await signExchangeOrder(order, maker.signer)
 
             expect(await makerWallet.orderUsed(0), "maker order 0 has not been cancelled").to.equal(false)
@@ -213,7 +211,7 @@ describe("DexWallet Unit Tests", () => {
 
             const maxBaseAmount = expectedBaseAmount
             // quote amount = base amount * exchange rate / 1e18
-            const maxQuoteAmount = maxBaseAmount.mul(exchangeRate).div(parseUnits("1", TokenA.decimals))
+            const maxQuoteAmount = maxBaseAmount.mul(exchangeRate).div(SCALE)
             const { baseAmount: baseAmountBefore, quoteAmount: quoteAmountBefore } = await makerWallet.maxTokensExchange(order)
             expect(baseAmountBefore, "max base amount").to.equal(maxBaseAmount)
             expect(quoteAmountBefore, "max quote amount").to.equal(maxQuoteAmount)
@@ -226,9 +224,105 @@ describe("DexWallet Unit Tests", () => {
             expect(await makerWallet.orderUsed(1), "maker order 1 has not been cancelled").to.equal(false)
             expect(await takerWallet.orderUsed(1), "taker order 1 has not been cancelled").to.equal(false)
             const { baseAmount: baseAmountAfter, quoteAmount: quoteAmountAfter } = await makerWallet.maxTokensExchange(order)
-            console.log(`baseAmountBefore  : ${baseAmountBefore.toString()}`)
-            console.log(`baseAmountAfter   : ${baseAmountAfter.toString()}`)
-            console.log(`expectedBaseAmount: ${expectedBaseAmount}`)
+            expect(baseAmountAfter, "max base amount").to.equal(baseAmountBefore.sub(expectedBaseAmount))
+            expect(quoteAmountAfter.div(100), "max quote amount").to.equal(quoteAmountBefore.sub(expectedQuoteAmount).div(100))
+        })
+        it("maker should buy tokens for ether", async () => {
+            const orderId = 12345
+            const expectedBaseAmount = parseUnits("2000", TokenA.decimals)
+            const expectedQuoteAmount = parseUnits("1", 18)
+
+            // Transfer some A tokens to taker's wallet
+            await tokenA.transfer(takerWallet.address, parseUnits("10000", TokenA.decimals))
+            // Transfer some ether to maker's wallet
+            await maker.signer.sendTransaction({ to: makerWallet.address, value: parseUnits("1", 18) })
+
+            expect(await maker.signer.getBalance(), "maker's ether balance").to.gt(parseUnits("999", 18))
+
+            // exchange rate = quote * 1e18 / base
+            const exchangeRate = expectedQuoteAmount.mul(SCALE).div(expectedBaseAmount)
+            // Maker signed the order
+            const order: ExchangeOrderStruct = {
+                exchangeType: ExchangeType.BUY,
+                baseToken: tokenA.address,
+                quoteToken: tokenEther,
+                exchangeRate,
+                id: orderId,
+                expiry: (await getTimestamp()).add(60),
+                chainId,
+            }
+            log("order: ")
+            log(order)
+
+            // // Sign swap order
+            const makerSig = await signExchangeOrder(order, maker.signer)
+
+            expect(await makerWallet.orderUsed(orderId), "maker order id has not been cancelled").to.equal(false)
+            expect(await takerWallet.orderUsed(orderId), "taker order id has not been cancelled").to.equal(false)
+
+            const maxQuoteAmount = await maker.signer.provider.getBalance(makerWallet.address)
+            // base amount = quote amount * 1e18 / exchange rate
+            const maxBaseAmount = maxQuoteAmount.mul(SCALE).div(exchangeRate)
+            log(`Exchange rate ${exchangeRate.toString()}`)
+            const { baseAmount: baseAmountBefore, quoteAmount: quoteAmountBefore } = await makerWallet.maxTokensExchange(order)
+            expect(quoteAmountBefore, "max quote amount").to.equal(maxQuoteAmount)
+            expect(baseAmountBefore, "max base amount").to.equal(maxBaseAmount)
+
+            // Taker executes the swap
+            const swapTx = await takerWallet.takeTokensExchange(order, expectedBaseAmount, makerWallet.address, makerSig)
+            await logTxDetails(swapTx, "take exchange")
+
+            expect(await makerWallet.orderUsed(orderId), "maker order id has not been cancelled").to.equal(false)
+            expect(await makerWallet.orderUsed(orderId), "maker order id has not been cancelled").to.equal(false)
+            const { baseAmount: baseAmountAfter, quoteAmount: quoteAmountAfter } = await makerWallet.maxTokensExchange(order)
+            expect(baseAmountAfter, "max base amount").to.equal(baseAmountBefore.sub(expectedBaseAmount))
+            expect(quoteAmountAfter.div(100), "max quote amount").to.equal(quoteAmountBefore.sub(expectedQuoteAmount).div(100))
+        })
+        it("maker should sell tokens for ether", async () => {
+            const orderId = await makerWallet.MAX_ORDER_ID()
+            const expectedBaseAmount = parseUnits("3200", TokenA.decimals)
+            const expectedQuoteAmount = parseUnits("2", TokenB.decimals)
+
+            // Transfer some A tokens to maker's wallet
+            await tokenA.transfer(makerWallet.address, expectedBaseAmount)
+            // Transfer some ether to taker's wallet
+            await taker.signer.sendTransaction({ to: takerWallet.address, value: parseUnits("2", 18) })
+
+            // exchange rate = quote * 1e18 / base
+            const exchangeRate = expectedQuoteAmount.mul(SCALE).div(expectedBaseAmount)
+            // Maker signed the order
+            const order: ExchangeOrderStruct = {
+                exchangeType: ExchangeType.SELL,
+                baseToken: tokenA.address,
+                quoteToken: tokenEther,
+                exchangeRate,
+                id: orderId,
+                expiry: (await getTimestamp()).add(60),
+                chainId,
+            }
+            log("order: ")
+            log(order)
+
+            // Sign swap order
+            const makerSig = await signExchangeOrder(order, maker.signer)
+
+            expect(await makerWallet.orderUsed(orderId), "maker order id has not been cancelled").to.equal(false)
+            expect(await takerWallet.orderUsed(orderId), "taker order id has not been cancelled").to.equal(false)
+
+            const maxBaseAmount = expectedBaseAmount
+            // quote amount = base amount * exchange rate / 1e18
+            const maxQuoteAmount = maxBaseAmount.mul(exchangeRate).div(SCALE)
+            const { baseAmount: baseAmountBefore, quoteAmount: quoteAmountBefore } = await makerWallet.maxTokensExchange(order)
+            expect(baseAmountBefore, "max base amount").to.equal(maxBaseAmount)
+            expect(quoteAmountBefore, "max quote amount").to.equal(maxQuoteAmount)
+
+            // Taker executes the swap
+            const swapTx = await takerWallet.takeTokensExchange(order, expectedBaseAmount, makerWallet.address, makerSig)
+            await logTxDetails(swapTx, "take exchange")
+
+            expect(await makerWallet.orderUsed(orderId), "maker order 1 has not been cancelled").to.equal(false)
+            expect(await takerWallet.orderUsed(orderId), "taker order 1 has not been cancelled").to.equal(false)
+            const { baseAmount: baseAmountAfter, quoteAmount: quoteAmountAfter } = await makerWallet.maxTokensExchange(order)
             expect(baseAmountAfter, "max base amount").to.equal(baseAmountBefore.sub(expectedBaseAmount))
             expect(quoteAmountAfter.div(100), "max quote amount").to.equal(quoteAmountBefore.sub(expectedQuoteAmount).div(100))
         })
@@ -263,7 +357,7 @@ describe("DexWallet Unit Tests", () => {
             await mockNFT.mint(takerWallet.address)
             await mockNFT.mint(takerWallet.address)
         })
-        it("maker should sell single NFT", async () => {
+        it("maker should sell single NFT for tokens", async () => {
             // Transfer some A tokens to taker's wallet
             await tokenA.transfer(takerWallet.address, parseUnits("5", TokenA.decimals))
 
@@ -291,8 +385,39 @@ describe("DexWallet Unit Tests", () => {
             expect(await mockNFT.balanceOf(makerWallet.address), "maker's wallet NFTs after").to.eq(2)
             expect(await mockNFT.balanceOf(takerWallet.address), "taker's wallet NFTs after").to.eq(4)
         })
+        it("maker should sell three NFTs for ether", async () => {
+            // Transfer some ether to taker's wallet
+            const price = parseUnits("1.210987654321098765", 18)
+            await taker.signer.sendTransaction({ to: takerWallet.address, value: price.mul(3) })
 
-        it("maker should sell all 3 NFTs", async () => {
+            expect(await mockNFT.ownerOf(1), "maker's wallet owns NFT 1 before").to.eq(makerWallet.address)
+            expect(await mockNFT.ownerOf(2), "maker's wallet owns NFT 2 before").to.eq(makerWallet.address)
+            expect(await mockNFT.balanceOf(makerWallet.address), "maker's wallet NFTs before").to.eq(3)
+            expect(await mockNFT.balanceOf(takerWallet.address), "taker's wallet NFTs after").to.eq(3)
+
+            // Maker signs NFT exchange
+            const order: NFTUnitOrderStruct = {
+                exchangeType: ExchangeType.SELL,
+                nft: mockNFT.address,
+                tokenIds: [0, 1, 2, 3, 4, 5, 6],
+                settleToken: tokenEther,
+                price,
+                id: 1,
+                expiry: (await getTimestamp()).add(5),
+                chainId,
+            }
+            const makerSig = await signNFTOrder(order, maker.signer)
+
+            const tx = await takerWallet.takeNFTUnitExchange(order, [0, 1, 2], makerWallet.address, makerSig)
+            await logTxDetails(tx, "take sell NFT exchange")
+
+            expect(await mockNFT.ownerOf(0), "taker owns NFT 0 after").to.eq(takerWallet.address)
+            expect(await mockNFT.ownerOf(1), "taker owns NFT 1 after").to.eq(takerWallet.address)
+            expect(await mockNFT.ownerOf(2), "taker owns NFT 2 after").to.eq(takerWallet.address)
+            expect(await mockNFT.balanceOf(makerWallet.address), "maker's wallet NFTs after").to.eq(0)
+            expect(await mockNFT.balanceOf(takerWallet.address), "taker's wallet NFTs after").to.eq(6)
+        })
+        it("maker should sell all 3 NFTs for tokens", async () => {
             // Transfer some A tokens to taker's wallet
             await tokenA.transfer(takerWallet.address, parseUnits("15.003", TokenA.decimals))
 
@@ -324,19 +449,14 @@ describe("DexWallet Unit Tests", () => {
             expect(await mockNFT.balanceOf(makerWallet.address), "maker's wallet NFTs after").to.eq(0)
             expect(await mockNFT.balanceOf(takerWallet.address), "taker's wallet NFTs after").to.eq(6)
         })
-
-        it("maker should buy two NFTs", async () => {
-            // Transfer some A tokens to taker's wallet
+        it("maker should buy two NFTs for a token", async () => {
+            // Transfer some A tokens to maker's wallet
             await tokenA.transfer(makerWallet.address, parseUnits("10", TokenA.decimals))
 
             expect(await mockNFT.ownerOf(3), "taker's wallet owns NFT 3 before").to.eq(takerWallet.address)
             expect(await mockNFT.ownerOf(4), "taker's wallet owns NFT 4 before").to.eq(takerWallet.address)
             expect(await mockNFT.balanceOf(makerWallet.address), "maker's wallet NFTs before").to.eq(3)
             expect(await mockNFT.balanceOf(takerWallet.address), "taker's wallet NFTs after").to.eq(3)
-            log(`makerWallet: ${makerWallet.address}`)
-            log(`takerWallet: ${takerWallet.address}`)
-            log(`deployer: ${deployer.address}`)
-            log(`mockNFT: ${mockNFT.address}`)
 
             // Maker signs NFT exchange
             const order: NFTUnitOrderStruct = {
@@ -354,9 +474,43 @@ describe("DexWallet Unit Tests", () => {
             const tx = await takerWallet.takeNFTUnitExchange(order, [3, 4], makerWallet.address, makerSig)
             await logTxDetails(tx, "take buy 2 NFTs exchange")
 
-            expect(await mockNFT.ownerOf(3), "maker owns NFT 1 after").to.eq(makerWallet.address)
+            expect(await mockNFT.ownerOf(3), "maker owns NFT 3 after").to.eq(makerWallet.address)
+            expect(await mockNFT.ownerOf(4), "maker owns NFT 4 after").to.eq(makerWallet.address)
+            expect(await mockNFT.ownerOf(5), "maker owns NFT 5 after").to.eq(takerWallet.address)
             expect(await mockNFT.balanceOf(makerWallet.address), "maker's wallet NFTs after").to.eq(5)
             expect(await mockNFT.balanceOf(takerWallet.address), "taker's wallet NFTs after").to.eq(1)
+        })
+        it("maker should buy a single NFT for ether", async () => {
+            // Transfer some ether to the maker's wallet
+            const price = parseUnits("12.3456789", 18)
+            await maker.signer.sendTransaction({ to: makerWallet.address, value: price })
+
+            expect(await mockNFT.ownerOf(3), "taker's wallet owns NFT 3 before").to.eq(takerWallet.address)
+            expect(await mockNFT.ownerOf(4), "taker's wallet owns NFT 4 before").to.eq(takerWallet.address)
+            expect(await mockNFT.balanceOf(makerWallet.address), "maker's wallet NFTs before").to.eq(3)
+            expect(await mockNFT.balanceOf(takerWallet.address), "taker's wallet NFTs after").to.eq(3)
+
+            // Maker signs NFT exchange
+            const order: NFTUnitOrderStruct = {
+                exchangeType: ExchangeType.BUY,
+                nft: mockNFT.address,
+                tokenIds: [3, 4, 5],
+                settleToken: tokenEther,
+                price,
+                id: 1,
+                expiry: (await getTimestamp()).add(5),
+                chainId,
+            }
+            const makerSig = await signNFTOrder(order, maker.signer)
+
+            const tx = await takerWallet.takeNFTUnitExchange(order, [4], makerWallet.address, makerSig)
+            await logTxDetails(tx, "take buy 1 NFT exchange")
+
+            expect(await mockNFT.ownerOf(3), "maker owns NFT 3 after").to.eq(takerWallet.address)
+            expect(await mockNFT.ownerOf(4), "maker owns NFT 4 after").to.eq(makerWallet.address)
+            expect(await mockNFT.ownerOf(5), "maker owns NFT 5 after").to.eq(takerWallet.address)
+            expect(await mockNFT.balanceOf(makerWallet.address), "maker's wallet NFTs after").to.eq(4)
+            expect(await mockNFT.balanceOf(takerWallet.address), "taker's wallet NFTs after").to.eq(2)
         })
     })
 })
