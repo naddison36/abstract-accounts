@@ -39,17 +39,19 @@ struct SwapOrder {
 /**
  * @notice What the market taker stores between calling the market maker and waiting to be called back to verify the token swap or exchange.
  * This is from the perspective of the market taker, so tokens `in` are from the maker to the taker, `out` is from the taker to the maker.
- * @param maker The address of the market maker's wallet.
- * @param takerTokenIn The token being transferred from the market taker to the marker taker's wallet.
- * @param takerTokenOut The token being transferred from the market taker's wallet to the market maker.
+ * @param makerTokensData two uint256 numbers to hold three address that fit in two slots instead of three.
+ * first 160 bits (20 bytes) of the first number is the market maker's wallet address.
+ * the next 96 bits (12 bytes) of the first number is the first 12 bytes of the makerTokenOut address.
+ * first 160 bits (20 bytes) of the second number is the takerTokenIn address.
+ * the next 64 bits (8 bytes) of the second number is the last 8 bytes of the takerTokenOut address.
+ * takerTokenIn: The token being transferred from the market taker to the marker taker's wallet.
+ * takerTokenOut: The token being transferred from the market taker's wallet to the market maker.
  * @param takerAmountOut The amount of tokens being transferred from the market taker's wallet to the market maker.
  * @param takerBalanceIn The expected balance of the `takerTokenIn` tokens in the market taker's wallet after the swap.
  * takerBalanceIn = before balance of `makerTokenOut` + `makerAmountOut`
  */
 struct TokensVerify {
-    address maker;
-    address takerTokenIn;
-    address takerTokenOut;
+    uint256[2] makerTokensData;
     uint128 takerAmountOut;
     uint128 takerBalanceIn;
 }
@@ -123,9 +125,12 @@ struct NFTBundleOrder {
 }
 
 /**
- * @param maker The address of the market maker's wallet.
- * @param nft The address of the NFT contract.
- * @param settleToken The token the NFTs are being bought or sold for. eg WETH or USDC
+ * @param makerNftSettleData two uint256 numbers to hold three address that fit in two slots instead of three.
+ * first 160 bits (20 bytes) of the first number is the market maker's wallet address.
+ * the next 96 bits (12 bytes) of the first number is the first 12 bytes of the settleToken address.
+ * first 160 bits (20 bytes) of the second number is the NFT contract address.
+ * the next 64 bits (8 bytes) of the second number is the last 8 bytes of the settleToken address.
+ * settleToken: The token the NFTs are being bought or sold for. eg WETH or USDC
  * @param tokenIds The NFT token IDs that are being bought or sold.
  * @param exchangeType Buy or Sell of the NFTs relative to the market maker's wallet.
  * @param settleAmtBal For Buy orders, `settleAmtBal` is the amount of settlement tokens to be transferred to the market maker's wallet.
@@ -133,11 +138,10 @@ struct NFTBundleOrder {
  * `settleAmtBal` = before balance of `settleToken` + (length of `tokenIds` * `price`)
  */
 struct NftVerify {
-    address maker;
-    address nft;
-    address settleToken;
+    uint256[2] makerNftSettleData;
+    // TODO pack these more efficiently
     uint256[] tokenIds;
-    // the following fit in one slot
+    // the following fits in one slot
     ExchangeType exchangeType;
     uint128 settleAmtBal;
 }
@@ -192,9 +196,10 @@ contract DexWallet is SimpleAccount {
         // Save VerifySwap
         bytes32 verifyHash = _hashVerifier(maker, order.id);
         tokensVerifiers[verifyHash] = TokensVerify({
-            maker: maker,
-            takerTokenIn: order.makerTokenOut,
-            takerTokenOut: order.makerTokenIn,
+            // maker: maker,
+            // takerTokenIn = order.makerTokenOut,
+            // takerTokenOut = order.makerTokenIn,
+            makerTokensData: _packAddresses(maker, order.makerTokenOut, order.makerTokenIn),
             takerAmountOut: SafeCast.toUint128(order.makerAmountIn),
             takerBalanceIn: order.makerTokenOut == ETH_TOKEN
                 ? SafeCast.toUint128(address(this).balance)
@@ -237,15 +242,20 @@ contract DexWallet is SimpleAccount {
         TokensVerify memory swap = tokensVerifiers[hash];
         delete tokensVerifiers[hash];
 
+        // Unpack the three addresses
+        (address maker, address takerTokenIn, address takerTokenOut) = _unpackAddresses(
+            swap.makerTokensData
+        );
+
         // verify wallet has received tokens or ether from the market maker
-        require(msg.sender == swap.maker, "invalid maker");
-        require(_verifyTransfer(swap.takerTokenIn, swap.takerBalanceIn), "maker did not transfer");
+        require(msg.sender == maker, "invalid maker");
+        require(_verifyTransfer(takerTokenIn, swap.takerBalanceIn), "maker did not transfer");
 
         // Hook to do other processing. eg arbitrage
         _verifyTokensHook(swap);
 
         // transfer ether or tokens to the taker
-        _transfer(swap.takerTokenOut, swap.maker, swap.takerAmountOut);
+        _transfer(takerTokenOut, maker, swap.takerAmountOut);
     }
 
     function _verifyTokensHook(TokensVerify memory swap) internal virtual {}
@@ -280,17 +290,19 @@ contract DexWallet is SimpleAccount {
         bytes32 verifyHash = _hashVerifier(maker, order.id);
         if (order.exchangeType == ExchangeType.BUY) {
             tokensVerifiers[verifyHash] = TokensVerify({
-                maker: maker,
-                takerTokenOut: order.baseToken,
-                takerTokenIn: order.quoteToken,
+                // maker: maker,
+                // takerTokenOut = order.baseToken,
+                // takerTokenIn = order.quoteToken,
+                makerTokensData: _packAddresses(maker, order.quoteToken, order.baseToken),
                 takerAmountOut: SafeCast.toUint128(baseAmount),
                 takerBalanceIn: SafeCast.toUint128(_balance(order.quoteToken) + quoteAmount)
             });
         } else {
             tokensVerifiers[verifyHash] = TokensVerify({
-                maker: maker,
-                takerTokenOut: order.quoteToken,
-                takerTokenIn: order.baseToken,
+                // maker: maker,
+                // takerTokenOut = order.quoteToken,
+                // takerTokenIn = order.baseToken,
+                makerTokensData: _packAddresses(maker, order.baseToken, order.quoteToken),
                 takerAmountOut: SafeCast.toUint128(quoteAmount),
                 takerBalanceIn: SafeCast.toUint128(_balance(order.baseToken) + baseAmount)
             });
@@ -368,9 +380,10 @@ contract DexWallet is SimpleAccount {
         bytes32 verifyHash = _hashVerifier(maker, order.id);
         if (order.exchangeType == ExchangeType.BUY) {
             nftVerifiers[verifyHash] = NftVerify({
-                maker: maker,
-                nft: order.nft,
-                settleToken: order.settleToken,
+                // maker: maker,
+                // nft: order.nft,
+                // settleToken: order.settleToken,
+                makerNftSettleData: _packAddresses(maker, order.nft, order.settleToken),
                 tokenIds: exchangeIds,
                 exchangeType: order.exchangeType,
                 settleAmtBal: SafeCast.toUint128(
@@ -379,9 +392,10 @@ contract DexWallet is SimpleAccount {
             });
         } else {
             nftVerifiers[verifyHash] = NftVerify({
-                maker: maker,
-                nft: order.nft,
-                settleToken: order.settleToken,
+                // maker: maker,
+                // nft: order.nft,
+                // settleToken: order.settleToken,
+                makerNftSettleData: _packAddresses(maker, order.nft, order.settleToken),
                 tokenIds: exchangeIds,
                 exchangeType: order.exchangeType,
                 settleAmtBal: SafeCast.toUint128(exchangeIds.length * order.price)
@@ -516,18 +530,20 @@ contract DexWallet is SimpleAccount {
         delete nftVerifiers[hash];
 
         // verify wallet has received tokens, ETH or NFTs from the counterparty
-        require(msg.sender == verifyData.maker, "invalid maker");
+        (address maker, address nft, address settleToken) = _unpackAddresses(
+            verifyData.makerNftSettleData
+        );
+        require(msg.sender == maker, "invalid maker");
         if (verifyData.exchangeType == ExchangeType.BUY) {
             // Verify the maker transferred the settlement tokens
-            if (verifyData.settleToken == ETH_TOKEN) {
+            if (settleToken == ETH_TOKEN) {
                 require(
                     address(this).balance >= verifyData.settleAmtBal,
                     "maker did not transfer ether"
                 );
             } else {
                 require(
-                    IERC20(verifyData.settleToken).balanceOf(address(this)) >=
-                        verifyData.settleAmtBal,
+                    IERC20(settleToken).balanceOf(address(this)) >= verifyData.settleAmtBal,
                     "maker did not transfer tokens"
                 );
             }
@@ -536,14 +552,14 @@ contract DexWallet is SimpleAccount {
             _verifyNFTsHook(verifyData);
 
             // Transfer out each of the exchanged NFTs
-            _transferNFTs(verifyData.nft, msg.sender, verifyData.tokenIds);
+            _transferNFTs(nft, msg.sender, verifyData.tokenIds);
         } else {
             // Verify the maker transferred the NFTs
             uint256 exchangeIdLen = verifyData.tokenIds.length;
             unchecked {
                 for (uint256 i; i < exchangeIdLen; ++i) {
                     require(
-                        IERC721(verifyData.nft).ownerOf(verifyData.tokenIds[i]) == address(this),
+                        IERC721(nft).ownerOf(verifyData.tokenIds[i]) == address(this),
                         "maker did not transfer NFT"
                     );
                 }
@@ -553,7 +569,7 @@ contract DexWallet is SimpleAccount {
             _verifyNFTsHook(verifyData);
 
             // Transfer out the settlement tokens
-            _transfer(verifyData.settleToken, msg.sender, verifyData.settleAmtBal);
+            _transfer(settleToken, msg.sender, verifyData.settleAmtBal);
         }
     }
 
@@ -649,6 +665,41 @@ contract DexWallet is SimpleAccount {
 
     function cancelSwap(uint256 id) external onlyOwner {
         _checkOrderId(id, true);
+    }
+
+    /**
+     * @dev Packs three 20 bytes addresses into two 32 byte numbers.
+     * This means only two storage slots are used instead of three.
+     * @return packed The packed addresses.
+     * The first 160 bits (20 bytes) of the first number is addr1.
+     * The next 96 bits (12 bytes) of the first number is the first 12 bytes of addr3.
+     * The first 160 bits (20 bytes) of the second number is addr2.
+     * The next 64 bits (8 bytes) of the second number is the last 8 bytes of addr3.
+     */
+    function _packAddresses(
+        address addr1,
+        address addr2,
+        address addr3
+    ) internal pure returns (uint256[2] memory packed) {
+        packed[0] = uint256(uint160(addr1)) | (uint256(uint160(addr3)) << 160);
+        packed[1] = uint256(uint160(addr2)) | ((uint256(uint160(addr3)) >> 96) << 160);
+    }
+
+    /**
+     * @dev Unpacks three 20 bytes addresses from two 32 byte numbers.
+     * This means only two storage slots are used instead of three.
+     * @param packed The packed addresses.
+     * The first 160 bits (20 bytes) of the first number is addr1.
+     * The next 96 bits (12 bytes) of the first number is the first 12 bytes of addr3.
+     * The first 160 bits (20 bytes) of the second number is addr2.
+     * The next 64 bits (8 bytes) of the second number is the last 8 bytes of addr3.
+     */
+    function _unpackAddresses(
+        uint256[2] memory packed
+    ) internal pure returns (address addr1, address addr2, address addr3) {
+        addr1 = address(uint160(packed[0]));
+        addr2 = address(uint160(packed[1]));
+        addr3 = address(uint160(packed[0] >> 160) | (uint160((packed[1] >> 160) << 96)));
     }
 
     function _transfer(address token, address recipient, uint256 amount) internal {
